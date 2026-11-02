@@ -27,6 +27,7 @@ extension AppModel {
                 show(snapshot)
                 track(snapshot)
                 scheduleReconcile(at: snapshot.nextDeadline)
+                scheduleQuickTimerReconcile(at: snapshot.quickTimer?.nextDeadline)
                 focusPanel.update()
                 // Rules name the apps the Apps line shows; every rule edit publishes a policy.
                 if snapshot.policy?.revision != policyRevision {
@@ -36,11 +37,18 @@ extension AppModel {
                 appBlocker.policyChanged()
             }
         }
+        // A clock change can bring a quick timer's notice or close forward.
+        Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: .NSSystemClockDidChange) {
+                await self?.reconcileQuickTimer()
+            }
+        }
         Task { [weak self] in
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.didWakeNotification) {
                 // Before reconciling, which publishes the revision Chrome must confirm.
                 self?.markProtectionStale()
                 await self?.reconcileAfterWake()
+                await self?.reconcileQuickTimer()
             }
         }
     }

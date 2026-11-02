@@ -1,7 +1,8 @@
 import FocusPilotCore
 import UserNotifications
 
-/// Tells the owner when a session reaches its planned end or a break ends.
+/// Tells the owner when a session reaches its planned end or a break ends,
+/// and when a quick timer has 2 minutes left or is up.
 /// Authorization is provisional: notices arrive quietly in Notification
 /// Center without a permission prompt, until the owner decides otherwise.
 struct UserNotices: FocusNoticeSink {
@@ -22,6 +23,11 @@ struct UserNotices: FocusNoticeSink {
             let text = ExceptionNoticeText.grantedFromChrome(scope, until: until)
             content.title = text.title
             content.body = text.body
+        case .quickTimerAlmostUp, .quickTimerUp:
+            guard let text = QuickTimerText.notice(notice) else { return }
+            content.title = text.title
+            content.body = text.body
+            content.sound = .default
         }
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }

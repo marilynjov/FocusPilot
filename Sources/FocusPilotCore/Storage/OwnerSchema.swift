@@ -277,6 +277,26 @@ enum OwnerSchema {
             try db.create(index: "dayBlock_on_planDate", on: DayBlockRow.databaseTableName, columns: ["planDate"])
             try db.create(index: "dayBlock_on_taskId", on: DayBlockRow.databaseTableName, columns: ["taskId"])
         }
+        migrator.registerMigration("owner-v13-quick-timer") { db in
+            // Quick timers (D2, decision 0004), kept after they end for
+            // stats (D6): planned length is plannedEnd - startedAt, actual
+            // length endedAt - startedAt. An 'expired' timer was closed an
+            // hour after its end with nobody finishing it.
+            try db.create(table: QuickTimerRow.databaseTableName) { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("label", .text)
+                table.column("startedAt", .datetime).notNull()
+                table.column("plannedEnd", .datetime).notNull()
+                table.column("endedAt", .datetime)
+                table.column("outcome", .text).check(sql: "outcome IN ('finished', 'stopped', 'expired')")
+                table.column("notified", .integer).notNull().defaults(to: 0)
+                table.check(sql: "startedAt < plannedEnd")
+                table.check(sql: "(endedAt IS NULL) = (outcome IS NULL)")
+            }
+            try db.create(index: "quickTimer_on_startedAt", on: QuickTimerRow.databaseTableName, columns: ["startedAt"])
+            // At most one running timer.
+            try db.execute(sql: "CREATE UNIQUE INDEX quickTimer_one_running ON quickTimer(endedAt IS NULL) WHERE endedAt IS NULL")
+        }
         return migrator
     }
 

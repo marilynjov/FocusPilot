@@ -41,6 +41,8 @@ public actor FocusCoordinator {
     /// The reason given when `exceptionWait` was confirmed; asking again
     /// from another profile or the app need not type it again.
     var exceptionWaitReason: String?
+    /// The quick timer still running (D2); see `FocusCoordinator+QuickTimer.swift`.
+    var quickTimer: QuickTimer?
     /// The last queued read-and-record of Herdr's agents; see `oneAgentReadingAtATime`.
     var agentReading: Task<Void, Never>?
     /// Grows with every change, so the app can drop a snapshot older than one it has.
@@ -72,7 +74,7 @@ public actor FocusCoordinator {
         FocusSnapshot(currentTaskTitle: try? await repository.nowTask()?.title, session: session,
                       observeSince: observeSince, earlyEndAvailableAt: earlyEndAvailableAt(), policy: policy,
                       pendingRuleEdit: pendingRuleEdit(), pendingException: pendingException(),
-                      revision: revision)
+                      quickTimer: quickTimer, revision: revision)
     }
 
     /// Every snapshot from now on, starting with the current one.

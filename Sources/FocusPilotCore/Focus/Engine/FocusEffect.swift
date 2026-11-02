@@ -28,6 +28,9 @@ public enum FocusNotice: Equatable, Sendable {
     /// A new exception granted from Chrome's blocked page (not one already
     /// covered), so a grant the owner did not ask for does not go unnoticed.
     case exceptionGrantedFromChrome(ExceptionScope, until: Date)
+    /// A quick timer (D2) has 2 minutes left, or has reached its end.
+    case quickTimerAlmostUp(label: String?)
+    case quickTimerUp(label: String?)
 }
 
 /// Work the engine asks the coordinator to perform, in order.
