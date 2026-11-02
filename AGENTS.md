@@ -21,6 +21,10 @@ Read README.md and the relevant design documents before editing. Phase 1 impleme
 
 Code lands through pull requests only. A PR merges after its tests pass and an independent reviewer agent (fresh context) checks it against the ticket, `docs/design/` and the decision records, with findings fixed. The owner does not read code. Before merging, get the owner's sign-off on Herdr agent behavior (described in plain language) and on screens (screenshots or try-it steps). See decision 0003, 2026-10-14.
 
+In this fork the owner is the fork owner, the only collaborator (decision 0004). Small documentation-only fixes, such as wording or broken links, may be committed straight to `main`; anything that changes code, tests, the schema, or a decision goes through a pull request as above.
+
+Commits and pull requests carry no Claude attribution: no `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" line (owner decision, 2026-11-02).
+
 ## Agent skills
 
 ### Issue tracker
