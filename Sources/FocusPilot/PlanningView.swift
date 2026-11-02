@@ -3,7 +3,7 @@ import FocusPilotCore
 import SwiftUI
 
 /// The planning window (design 01, 07, 15 and 16): a sidebar with Today,
-/// Projects, Review queue and Settings, and the quick capture sheet. A
+/// Today's plan (D1), Projects, Review queue and Settings, and the quick capture sheet. A
 /// selected task shows its Agent section in the inspector; the rest of the
 /// task detail pane arrives with its ticket. The sidebar footer shows
 /// protection status (#17).
@@ -11,7 +11,7 @@ struct PlanningView: View {
     static let windowID = "planning"
 
     enum Page: Hashable {
-        case today, projects, review, settings
+        case today, dayPlan, projects, review, settings
     }
 
     let model: AppModel
@@ -28,6 +28,7 @@ struct PlanningView: View {
         NavigationSplitView {
             List(selection: $page) {
                 Label("Today", systemImage: "sun.max").tag(Page.today)
+                Label("Today’s plan", systemImage: "calendar.day.timeline.left").tag(Page.dayPlan)
                 Label("Projects", systemImage: "folder").tag(Page.projects)
                 Label("Review queue", systemImage: "tray.full").tag(Page.review)
                     .badge(model.reviewItems.count)
@@ -90,6 +91,7 @@ struct PlanningView: View {
 
     private var title: String {
         switch page {
+        case .dayPlan: "Today’s plan"
         case .projects: "Projects"
         case .review: "Review queue"
         case .settings: "Settings"
@@ -106,13 +108,15 @@ struct PlanningView: View {
             let results = count == 1 ? "1 result" : "\(count) results"
             return count == 0 ? "Nothing queued"
                 : approvals == 0 ? results : "\(results) · \(approvals) need\(approvals == 1 ? "s" : "") your approval"
-        case .today, nil: return Date.now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        case .today, .dayPlan, nil: return Date.now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
         }
     }
 
     @ViewBuilder private var content: some View {
         if let startupError = model.startupError {
             ContentUnavailableView("Database unavailable", systemImage: "exclamationmark.triangle", description: Text(startupError))
+        } else if page == .dayPlan {
+            DayPlanView(model: model)
         } else if page == .projects {
             ProjectsView(model: model, showReviewQueue: { page = .review })
         } else if page == .review {
