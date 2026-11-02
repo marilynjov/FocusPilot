@@ -24,15 +24,21 @@ public enum FocusEngine {
             return reconcile(persisted, at: now)
         }
 
+        // Pauses and breaks stop the countdown (owner decision, 2026-11-02):
+        // the planned end moves later by the time spent in them.
         switch (event, session.phase) {
         case (.pause, .running):
             session.phase = .paused(since: now)
-        case (.resume, .paused):
+        case (.resume, .paused(let since)):
+            session.plannedEnd += now.timeIntervalSince(since)
             session.phase = .running
         case (.startBreak(let duration), .running):
             guard duration > 0 else { throw .nonPositiveDuration }
+            session.plannedEnd += duration
             session.phase = .onBreak(until: now.addingTimeInterval(duration))
-        case (.endBreak, .onBreak):
+        case (.endBreak, .onBreak(let until)):
+            // Ended early: give back the part of the break not taken.
+            session.plannedEnd -= until.timeIntervalSince(now)
             session.phase = .running
         case (.endBreak, .running) where persisted.phase != session.phase:
             // The break ran out before the owner ended it; report that instead.
@@ -82,7 +88,8 @@ public enum FocusEngine {
                 session.phase = .ended(at: session.plannedEnd, reason: .reachedPlannedEnd)
                 return (session, [.sessionReachedPlannedEnd])
             }
-            // Until exceptions (#14) add deadlines, only a break ends earlier.
+            // Until exceptions (#14) add deadlines, only a break ends earlier;
+            // its time was already added to the planned end when it started.
             session.phase = .running
             notices.append(.breakEnded)
         }

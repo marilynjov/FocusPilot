@@ -61,7 +61,7 @@ struct FocusEngineTimeTests {
         #expect(resumed.phase == .running)
         #expect(transition.effects == [
             .persist(resumed),
-            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: running.plannedEnd)),
+            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: clock.minutes(from: running.plannedEnd, 5))),
             .notify(.breakEnded),
         ])
     }
@@ -75,7 +75,9 @@ struct FocusEngineTimeTests {
         let transition = try FocusEngine.handle(.endBreak, session: onBreak, at: clock.now)
 
         #expect(transition.session?.phase == .running)
-        #expect(transition.effects.last == .publishPolicy(FocusEngine.policy(for: running)))
+        var later = running
+        later.plannedEnd = clock.minutes(from: running.plannedEnd, 2)
+        #expect(transition.effects.last == .publishPolicy(FocusEngine.policy(for: later)))
     }
 
     @Test mutating func sleepingThroughABreakAndThePlannedEndOnlyReportsTheEnd() throws {
@@ -86,21 +88,41 @@ struct FocusEngineTimeTests {
 
         let transition = try FocusEngine.handle(.reconcile, session: onBreak, at: clock.now)
 
-        // Both deadlines were crossed: the break ended at minute 23, the session at 25.
+        // Both deadlines were crossed: the break ended at minute 23, the
+        // session at 28, since the break moved its end 3 minutes later.
         let ended = try #require(transition.session)
-        #expect(ended.phase == .ended(at: running.plannedEnd, reason: .reachedPlannedEnd))
+        #expect(ended.phase == .ended(at: clock.minutes(from: running.plannedEnd, 3), reason: .reachedPlannedEnd))
         #expect(transition.effects == [.persist(ended), .publishPolicy(nil), .notify(.sessionReachedPlannedEnd)])
     }
 
-    @Test mutating func aPauseDoesNotMoveThePlannedEnd() throws {
+    @Test mutating func aPauseStopsTheCountdownAndResumingMovesTheEndLater() throws {
         let running = try start(minutes: 25)
         clock.advance(minutes: 10)
         let paused = try #require(FocusEngine.handle(.pause, session: running, at: clock.now).session)
+        #expect(paused.nextDeadline == nil)
         clock.advance(minutes: 30)
 
-        let transition = try FocusEngine.handle(.reconcile, session: paused, at: clock.now)
+        // Nothing is due while paused, and the time left stands still.
+        let reconciled = try FocusEngine.handle(.reconcile, session: paused, at: clock.now)
+        #expect(reconciled.session?.phase == paused.phase)
+        #expect(paused.remaining(at: clock.now) == 15 * 60)
 
-        #expect(transition.session?.phase == .ended(at: running.plannedEnd, reason: .reachedPlannedEnd))
+        let resumed = try #require(FocusEngine.handle(.resume, session: paused, at: clock.now).session)
+        #expect(resumed.plannedEnd == clock.minutes(from: running.plannedEnd, 30))
+        #expect(resumed.remaining(at: clock.now) == 15 * 60)
+    }
+
+    @Test mutating func aBreakStopsTheCountdownAndEndingItEarlyGivesTheRestBack() throws {
+        let running = try start(minutes: 50)
+        clock.advance(minutes: 20)
+        let onBreak = try #require(FocusEngine.handle(.startBreak(duration: 10 * 60), session: running, at: clock.now).session)
+        #expect(onBreak.plannedEnd == clock.minutes(from: running.plannedEnd, 10))
+        clock.advance(minutes: 4)
+        #expect(onBreak.remaining(at: clock.now) == 30 * 60)
+
+        let back = try #require(FocusEngine.handle(.endBreak, session: onBreak, at: clock.now).session)
+        #expect(back.plannedEnd == clock.minutes(from: running.plannedEnd, 4))
+        #expect(back.remaining(at: clock.now) == 30 * 60)
     }
 
     @Test mutating func anEventArrivingAfterAMissedPlannedEndIsJudgedAgainstTheEndedSession() throws {
@@ -112,7 +134,7 @@ struct FocusEngineTimeTests {
         }
     }
 
-    @Test mutating func theNextDeadlineIsTheEarlierOfBreakEndAndPlannedEnd() throws {
+    @Test mutating func theNextDeadlineIsTheBreakEndDuringABreak() throws {
         let running = try start(minutes: 25)
         #expect(running.nextDeadline == running.plannedEnd)
 
@@ -121,7 +143,7 @@ struct FocusEngineTimeTests {
         #expect(shortBreak?.nextDeadline == clock.minutes(from: clock.now, 5))
 
         let longBreak = try FocusEngine.handle(.startBreak(duration: 60 * 60), session: running, at: clock.now).session
-        #expect(longBreak?.nextDeadline == running.plannedEnd)
+        #expect(longBreak?.nextDeadline == clock.minutes(from: clock.now, 60))
 
         let ended = try FocusEngine.handle(.complete, session: running, at: clock.now).session
         #expect(ended?.nextDeadline == nil)
@@ -138,7 +160,7 @@ struct FocusEngineTimeTests {
         #expect(resumed.phase == .running)
         #expect(transition.effects == [
             .persist(resumed),
-            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: running.plannedEnd)),
+            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: clock.minutes(from: running.plannedEnd, 5))),
             .notify(.breakEnded),
         ])
     }

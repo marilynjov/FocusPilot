@@ -25,7 +25,7 @@ struct FocusEngineLifecycleTests {
         ])
     }
 
-    @Test mutating func pausingLiftsSessionRulesAndResumingRestoresThemWithTheSameEnd() throws {
+    @Test mutating func pausingLiftsSessionRulesAndResumingRestoresThemWithAnEndLaterByThePause() throws {
         let started = try FocusEngine.handle(.start(startRequest(minutes: 25)), session: nil, at: clock.now).session
         clock.advance(minutes: 5)
 
@@ -36,10 +36,11 @@ struct FocusEngineLifecycleTests {
         clock.advance(minutes: 3)
         let resumed = try FocusEngine.handle(.resume, session: paused.session, at: clock.now)
         #expect(resumed.session?.phase == .running)
-        #expect(resumed.session?.plannedEnd == started?.plannedEnd)
+        let later = clock.minutes(from: started!.plannedEnd, 3)
+        #expect(resumed.session?.plannedEnd == later)
         #expect(resumed.effects == [
             .persist(resumed.session!),
-            .publishPolicy(SessionPolicy(sessionID: sessionID, mode: .normal, end: started!.plannedEnd)),
+            .publishPolicy(SessionPolicy(sessionID: sessionID, mode: .normal, end: later)),
         ])
     }
 
