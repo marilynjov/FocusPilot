@@ -8,8 +8,9 @@ extension FocusCoordinator {
         try await repository.dayPreferences()
     }
 
-    public func saveDayPreferences(_ preferences: DayPreferences) async throws {
-        try await repository.saveDayPreferences(preferences)
+    @discardableResult
+    public func saveDayPreferences(_ preferences: DayPreferences, today: LocalDate? = nil) async throws -> DayPreferencesSave {
+        try await repository.saveDayPreferences(preferences, today: today)
     }
 
     public func dayPlan(for date: LocalDate) async throws -> DayPlan {
