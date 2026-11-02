@@ -69,6 +69,8 @@ final class AppModel {
     @ObservationIgnored lazy var appBlocker = AppBlocker(model: self)
     let loginItem = LoginItemSettings(service: MainAppLoginItem())
     let menuBarPreferences = MenuBarPreferences()
+    /// Palette and Appearance (#14); see `PaletteTheme.swift`.
+    let displayPreferences = DisplayPreferences()
     private let firstLaunch = FirstLaunchWelcome()
 
     let coordinator: FocusCoordinator?
@@ -91,6 +93,8 @@ final class AppModel {
             coordinator = nil
             startupError = "Could not open the database: \(error.localizedDescription)"
         }
+        displayPreferences.applyAppearance()
+        displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
         refreshLoginItem(on: NSApplication.didBecomeActiveNotification)
         tickWhileTimeIsShown()

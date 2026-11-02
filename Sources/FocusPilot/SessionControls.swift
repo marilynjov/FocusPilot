@@ -30,7 +30,7 @@ struct SessionControls: View {
                         Button { Task { await model.complete() } } label: {
                             Label("Complete", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .accentProminentButton()
                     }
                     .controlSize(.large)
                 }
@@ -75,7 +75,7 @@ struct SessionControls: View {
             HStack(spacing: 8) {
                 Button { Task { await model.cancelEarlyEnd() } } label: { wide("Keep focusing") }
                 Button { Task { await model.complete() } } label: { wide("Complete") }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .disabled(!ready)
             }
         }
@@ -92,12 +92,13 @@ struct SessionHeader: View {
     let now: Date
     var timeFont: Font = .title.weight(.medium)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.palette) private var palette
 
     var body: some View {
         let text = SessionText(session)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Circle()
-                .fill(session.phase == .running ? Color.accentColor : Color.secondary)
+                .fill(session.phase == .running ? palette.color(.accent) : Color.secondary)
                 .frame(width: 7, height: 7)
                 .contrastOutline()
                 .accessibilityHidden(true)

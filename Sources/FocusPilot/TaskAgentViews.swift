@@ -118,15 +118,15 @@ struct AgentStateLabel: View {
     var body: some View {
         switch state {
         case .live(let agent): AgentActivityLabel(activity: agent.status.activity)
-        case .renamed(let agent): dot("Renamed in Herdr to “\(agent.name ?? agent.kind)”", .orange, filled: false)
-        case .replaced: dot("Another agent in this pane", .orange, filled: false)
-        case .notFound: dot("Not found in Herdr", .orange, filled: false)
-        case .unknown: dot("Herdr unavailable", .gray, filled: false)
+        case .renamed(let agent): dot("Renamed in Herdr to “\(agent.name ?? agent.kind)”", .blocked, filled: false)
+        case .replaced: dot("Another agent in this pane", .blocked, filled: false)
+        case .notFound: dot("Not found in Herdr", .blocked, filled: false)
+        case .unknown: dot("Herdr unavailable", .unknown, filled: false)
         }
     }
 
-    private func dot(_ title: String, _ color: Color, filled: Bool) -> some View {
-        StatusDot(title: title, color: color, filled: filled)
+    private func dot(_ title: String, _ role: PaletteRole, filled: Bool) -> some View {
+        StatusDot(title: title, role: role, filled: filled)
     }
 }
 
@@ -135,25 +135,28 @@ struct AgentActivityLabel: View {
 
     var body: some View {
         switch activity {
-        case .working: StatusDot(title: "Working", color: .accentColor, filled: true)
-        case .blocked: StatusDot(title: "Blocked", color: .orange, filled: true)
-        case .ready: StatusDot(title: "Ready", color: .green, filled: true)
+        case .working: StatusDot(title: "Working", role: .accent, filled: true)
+        case .blocked: StatusDot(title: "Blocked", role: .blocked, filled: true)
+        case .ready: StatusDot(title: "Ready", role: .ready, filled: true)
         // Unknown is never shown as done.
-        case .unknown: StatusDot(title: "Unknown", color: .gray, filled: false)
+        case .unknown: StatusDot(title: "Unknown", role: .unknown, filled: false)
         }
     }
 }
 
+/// A status dot in the palette's status color; the label stays in the text
+/// color, so it keeps text contrast whatever the dot's color.
 struct StatusDot: View {
     let title: String
-    let color: Color
+    let role: PaletteRole
     let filled: Bool
+    @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: filled ? "circle.fill" : "circle")
                 .font(.system(size: 8))
-                .foregroundStyle(color)
+                .foregroundStyle(palette.color(role))
                 .contrastOutline()
                 .accessibilityHidden(true)
             Text(title)

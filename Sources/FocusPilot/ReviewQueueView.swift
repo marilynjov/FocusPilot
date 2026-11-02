@@ -83,7 +83,7 @@ struct AgentResultRow: View {
                 }
             }
             Spacer(minLength: 8)
-            StatusDot(title: item.stateTitle, color: item.kind == .approval ? .orange : .green, filled: true)
+            StatusDot(title: item.stateTitle, role: item.kind == .approval ? .blocked : .ready, filled: true)
         }
         .padding(.vertical, 4)
         // One item for VoiceOver, without the arrow and middle dots.
@@ -102,7 +102,7 @@ struct AgentResultDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                StatusDot(title: item.stateTitle, color: item.kind == .approval ? .orange : .green, filled: true)
+                StatusDot(title: item.stateTitle, role: item.kind == .approval ? .blocked : .ready, filled: true)
                 Text(verbatim: "\(item.place) · \(item.timeTitle.lowercased())")
                     .font(.callout)
                     .foregroundStyle(.secondary)

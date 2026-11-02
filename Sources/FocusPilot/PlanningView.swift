@@ -18,6 +18,7 @@ struct PlanningView: View {
     @State private var page: Page?
     @State private var isCapturing = false
     @State private var todaySelection: Int64?
+    @Environment(\.palette) private var palette
 
     init(model: AppModel, page: Page = .today) {
         self.model = model
@@ -37,6 +38,10 @@ struct PlanningView: View {
             .safeAreaInset(edge: .bottom) { SidebarProtectionFooter(model: model) }
         } detail: {
             content
+                // The window background in the owner's palette (#14); lists
+                // and forms show it instead of drawing their own.
+                .scrollContentBackground(.hidden)
+                .background(palette.color(.bg))
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {

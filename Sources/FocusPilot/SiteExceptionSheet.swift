@@ -104,7 +104,7 @@ struct SiteExceptionSheet: View {
                 }
                 .keyboardShortcut(.cancelAction)
                 Button(allowLabel(availableAt: availableAt)) { request() }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .keyboardShortcut(.defaultAction)
                     .disabled(scope == nil || waiting || (isStrict && givenReason.isEmpty))
             }

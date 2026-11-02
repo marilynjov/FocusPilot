@@ -72,7 +72,7 @@ final class BlockedAppPanelController {
                 model?.planningWindowRequests += 1
             },
             excepted: { [weak blocker] app in blocker?.showExcepted(app) },
-            close: { [weak self] in self?.close() })))
+            close: { [weak self] in self?.close() })).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         return panel
@@ -177,11 +177,11 @@ struct BlockedAppPanelView: View {
                             Button(action: actions.returnToTask) {
                                 Label("Return to task", systemImage: "arrow.uturn.backward")
                             }
-                            .buttonStyle(.borderedProminent)
+                            .accentProminentButton()
                             .keyboardShortcut(.defaultAction)
                         } else {
                             Button("Open FocusPilot", action: actions.openFocusPilot)
-                                .buttonStyle(.borderedProminent)
+                                .accentProminentButton()
                         }
                         Button(BlockedAppText.exceptionButton(availableAt: pendingAvailableAt(blocked), now: model.now)) {
                             state.isRequestingException = true
@@ -247,7 +247,7 @@ struct BlockedAppPanelView: View {
                     if availableAt != nil { Task { await model.cancelException() } }
                 }
                 Button(allowLabel(availableAt: availableAt)) { request(blocked) }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .keyboardShortcut(.defaultAction)
                     .disabled(waiting || (isStrict && state.reason.trimmingCharacters(in: .whitespaces).isEmpty))
             }

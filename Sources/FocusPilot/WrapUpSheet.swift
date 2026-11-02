@@ -55,7 +55,7 @@ struct WrapUpSheet: View {
                     .help("Close without saving (Esc)")
                 Button("Save", action: save)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .disabled(isSaving)
                     .help("Save (⌘⏎)")
             }
