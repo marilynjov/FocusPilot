@@ -30,6 +30,9 @@ cp "$bin/focuspilot-cli" "$app/Contents/Helpers/focuspilot"
 # manifest at it on launch.
 cp "$bin/focuspilot-chrome-host" "$app/Contents/Helpers/focuspilot-chrome-host"
 cp Packaging/Info.plist "$app/Contents/Info.plist"
+# The raccoon companion's layer strips and raccoon.json, committed output of
+# scripts/build-raccoon-art.sh.
+cp -R Packaging/Raccoon "$app/Contents/Resources/Raccoon"
 
 # The Chrome extension, copied by the app to its stable folder in
 # Application Support, where the owner loads it once. Icons are generated.
