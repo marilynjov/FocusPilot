@@ -11,7 +11,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+Issues live in the `marilynjov/FocusPilot` fork. Always pass `-R marilynjov/FocusPilot` to `gh` commands: the default repo set with `gh repo set-default` is local to each clone. Do not file issues or pull requests in `upstream` (`SantiagoM99/FocusPilot`) unless the owner asks. In a fresh clone, also run `git remote set-url --push upstream DISABLED` so nothing can be pushed there by accident.
 
 ## Pull requests as a triage surface
 
