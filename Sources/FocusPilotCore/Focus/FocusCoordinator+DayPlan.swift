@@ -18,19 +18,19 @@ extension FocusCoordinator {
 
     public func addBlock(_ block: DayBlock, to date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         let edit = try await repository.addBlock(block, to: date, confirmed: confirmed)
-        try await followPlan()
+        await followPlanAfterAction()
         return edit
     }
 
     public func updateBlock(_ block: DayBlock, in date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         let edit = try await repository.updateBlock(block, in: date, confirmed: confirmed)
-        try await followPlan()
+        await followPlanAfterAction()
         return edit
     }
 
     public func deleteBlock(_ id: Int64, from date: LocalDate) async throws -> DayPlan {
         let plan = try await repository.deleteBlock(id, from: date)
-        try await followPlan()
+        await followPlanAfterAction()
         return plan
     }
 
@@ -38,8 +38,20 @@ extension FocusCoordinator {
     /// progress starts for the time left.
     public func approveDayPlan(for date: LocalDate) async throws -> DayPlan {
         let plan = try await repository.approveDayPlan(for: date)
-        try await followPlan()
+        await followPlanAfterAction()
         return plan
+    }
+
+    /// Follows the plan after an owner action that already succeeded. A
+    /// failure here is the plan's, not the action's: it is shown on its own
+    /// through the snapshot, and the next deadline or wake tries again.
+    func followPlanAfterAction() async {
+        do {
+            try await followPlan()
+        } catch {
+            planFailure = "Could not follow today’s plan: \(error.localizedDescription)"
+            await broadcast()
+        }
     }
 
     /// "I need more time" on the running block. Recorded only; the block
@@ -56,6 +68,7 @@ extension FocusCoordinator {
     /// strict ones included, are never replaced: a block that starts during
     /// one waits for it to end, then runs for the time it has left.
     func followPlan() async throws {
+        planFailure = nil
         let timeZone = timeZone()
         // A step can lead to another: a block starting during its own lunch
         // starts on a break. Bounded so a bug cannot spin.
@@ -63,22 +76,31 @@ extension FocusCoordinator {
             let now = now()
             let date = LocalDate(containing: now, in: timeZone)
             let (plan, runs) = try await repository.planToFollow(on: date)
-            guard let plan, let step = PlanSessions.step(plan: plan, runs: runs, session: session, at: now, timeZone: timeZone) else {
-                planDeadline = plan.flatMap { PlanSessions.nextDeadline(plan: $0, runs: runs, at: now, timeZone: timeZone) }
-                break
-            }
-            switch step {
-            case .startSession(let block):
-                let run = PlanRun(blockID: block.blockID, sessionID: UUID(), startedAt: now)
-                let request = SessionRequest(id: run.sessionID, taskID: block.taskID, action: block.title, mode: .normal,
-                                             duration: block.end.timeIntervalSince(now))
-                try await handle(.start(request), planChange: .started(run, planDate: date, taskID: block.taskID))
-                await notices.deliver(.planBlockStarted(title: block.title, end: block.end))
-            case .startBreak(let due, let sessionID):
-                try await handle(.startBreak(duration: due.end.timeIntervalSince(now)),
-                                 planChange: .breakStarted(sessionID: sessionID, breakID: due.blockID))
+            guard let plan, let step = PlanSessions.step(plan: plan, runs: runs, session: session, at: now, timeZone: timeZone)
+            else { break }
+            do {
+                switch step {
+                case .startSession(let block):
+                    let run = PlanRun(blockID: block.blockID, sessionID: UUID(), startedAt: now)
+                    let request = SessionRequest(id: run.sessionID, taskID: block.taskID, action: block.title, mode: .normal,
+                                                 duration: block.end.timeIntervalSince(now))
+                    try await handle(.start(request), planChange: .started(run, planDate: date, taskID: block.taskID))
+                    await notices.deliver(.planBlockStarted(title: block.title, end: block.end))
+                case .startBreak(let due, let sessionID):
+                    try await handle(.startBreak(duration: due.end.timeIntervalSince(now)),
+                                     planChange: .breakStarted(sessionID: sessionID, breakID: due.blockID))
+                }
+            } catch is FocusEngineError {
+                // Another step got in first (the owner started, paused or
+                // ended a session meanwhile): look again at the new state.
+                continue
             }
         }
+        // Worked out after the steps, however many there were.
+        let now = now()
+        let date = LocalDate(containing: now, in: timeZone)
+        let (plan, runs) = try await repository.planToFollow(on: date)
+        planDeadline = plan.flatMap { PlanSessions.nextDeadline(plan: $0, runs: runs, at: now, timeZone: timeZone) }
         if let active = session, !active.hasEnded {
             planRun = try await repository.planRun(for: active.id)
         } else {

@@ -179,6 +179,101 @@ struct PlanSessionCoordinatorTests {
         #expect(await fixture.coordinator.snapshot().session == nil)
     }
 
+    /// Running sessions as stored, not as the coordinator remembers them.
+    private func storedActiveSessions(_ fixture: SessionFixture) async throws -> [FocusSession] {
+        try await DatabaseQueue(path: fixture.location.ownerDatabaseURL.path).read { db in
+            try SessionRow.fetchAll(db).map { try $0.session() }.filter { !$0.hasEnded }
+        }
+    }
+
+    @Test(arguments: 0..<8)
+    func anOwnerStartAndABlockStartAtOnceLeaveOneSession(round: Int) async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (10, 30), to: (11, 30))
+        moveClock(fixture, to: "10:30")
+
+        let coordinator = fixture.coordinator
+        let owner = Task { try await coordinator.startSession(duration: 25 * 60, mode: .strict) }
+        let plan = Task { try await coordinator.reconcile() }
+        let ownerResult = await owner.result
+        try await plan.value
+
+        let stored = try await storedActiveSessions(fixture)
+        #expect(stored.count == 1)
+        #expect(await fixture.coordinator.snapshot().activeSession == stored.first)
+        // Whichever came second was refused or waited, never stored beside it.
+        if case .failure(let error) = ownerResult {
+            #expect(error as? FocusEngineError == .sessionAlreadyActive)
+            #expect(stored.first?.mode == .normal)
+        } else {
+            #expect(stored.first?.mode == .strict)
+        }
+    }
+
+    @Test func storageRefusesASecondRunningSession() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        let other = try FocusEngine.handle(.start(SessionRequest(id: UUID(), taskID: 1, action: "Other", mode: .normal,
+                                                                 duration: 600)), session: nil, at: fixture.clock.now)
+
+        await #expect(throws: FocusEngineError.sessionAlreadyActive) {
+            try await fixture.coordinator.repository.record(other)
+        }
+        #expect(try await storedActiveSessions(fixture).count == 1)
+    }
+
+    @Test func backToBackBlocksHandOverAtTheSharedInstant() async throws {
+        let fixture = try await SessionFixture()
+        let taskID = try await approve(fixture, block: (10, 30), to: (11, 0))
+        _ = try await fixture.coordinator.addBlock(
+            DayBlock(kind: .task, start: ClockTime(11, 0), end: ClockTime(11, 30), taskID: taskID), to: today)
+        _ = try await fixture.coordinator.approveDayPlan(for: today)
+        moveClock(fixture, to: "10:30")
+        try await fixture.coordinator.reconcile()
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(await fixture.coordinator.snapshot().nextDeadline == at("11:00"))
+
+        moveClock(fixture, to: "11:00")
+        try await fixture.coordinator.reconcile()
+
+        let second = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(second.id != first.id)
+        #expect(second.startedAt == at("11:00"))
+        #expect(second.plannedEnd == at("11:30"))
+    }
+
+    @Test func pausedThroughLunchThenResumedTakesTheRestOfLunch() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (11, 30), to: (13, 30))
+        moveClock(fixture, to: "11:30")
+        try await fixture.coordinator.reconcile()
+        moveClock(fixture, to: "11:50")
+        try await fixture.coordinator.pause()
+
+        moveClock(fixture, to: "12:00")
+        try await fixture.coordinator.reconcile()
+        #expect(await fixture.coordinator.snapshot().activeSession?.phase == .paused(since: at("11:50")))
+
+        moveClock(fixture, to: "12:30")
+        try await fixture.coordinator.resume()
+
+        #expect(await fixture.coordinator.snapshot().activeSession?.phase == .onBreak(until: at("13:00")))
+        #expect(await fixture.publisher.published.last?.session?.resumesAt == at("13:00"))
+    }
+
+    @Test func aTimeZoneChangeMovesTheBlockToTheNewWallClock() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (10, 30), to: (11, 30))
+        #expect(await fixture.coordinator.snapshot().activeSession == nil)
+
+        // 10:00 in Bogotá is 11:00 in New York, inside the block there.
+        fixture.zone.set(newYork)
+        try await fixture.coordinator.reconcile()
+
+        let session = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(session.plannedEnd == instant("2026-10-14T11:30:00-04:00"))
+    }
+
     @Test func deletingABlockKeepsItsRunAsHistory() async throws {
         let fixture = try await SessionFixture()
         try await approve(fixture, block: (9, 30), to: (11, 0))

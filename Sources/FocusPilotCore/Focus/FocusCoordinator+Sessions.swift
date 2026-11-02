@@ -15,7 +15,7 @@ extension FocusCoordinator {
         }
         try await launchQuickTimer()
         // Catches up on a block in progress; one already over never starts.
-        try await followPlan()
+        await followPlanAfterAction()
     }
 
     /// Starts a session on the pinned Now task.
@@ -30,7 +30,7 @@ extension FocusCoordinator {
 
     public func resume() async throws {
         try await handle(.resume)
-        try await followPlan()
+        await followPlanAfterAction()
     }
 
     /// Applies any deadline the clock has passed. Called at `nextDeadline`,
@@ -60,7 +60,7 @@ extension FocusCoordinator {
             planChange = .endedEarly(sessionID: active.id, at: now())
         }
         try await handle(.complete, planChange: planChange)
-        try await followPlan()
+        await followPlanAfterAction()
         return .completed
     }
 
@@ -83,7 +83,20 @@ extension FocusCoordinator {
 
     /// One engine step: record the session, revisions and any plan block
     /// change in one write, then publish the wrapped policies and deliver notices.
+    ///
+    /// Steps run one at a time, each judged against the session the step
+    /// before left.
     func handle(_ event: FocusEvent, planChange: PlanRunChange? = nil) async throws {
+        let previous = stepInProgress
+        let step = Task { () async throws -> Void in
+            await previous?.value
+            try await self.performStep(event, planChange: planChange)
+        }
+        stepInProgress = Task { _ = await step.result }
+        try await step.value
+    }
+
+    private func performStep(_ event: FocusEvent, planChange: PlanRunChange?) async throws {
         let at = now()
         let transition = try FocusEngine.handle(event, session: session, at: at)
         // Starting a strict session cancels exceptions granted before it,

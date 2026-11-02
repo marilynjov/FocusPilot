@@ -95,7 +95,7 @@ struct DayPlanView: View {
                     .font(.callout)
                     .foregroundStyle(palette.color(.muted))
             }
-            SettingsError(message: model.dayPlanError)
+            SettingsError(message: model.dayPlanError ?? model.snapshot.planFailure)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

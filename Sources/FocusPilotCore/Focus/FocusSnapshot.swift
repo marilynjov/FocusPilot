@@ -28,6 +28,8 @@ public struct FocusSnapshot: Equatable, Sendable {
     public var planRun: PlanRun?
     /// When the approved plan next starts a block or a break inside one.
     public var planDeadline: Date?
+    /// Why the approved plan could not be followed just now, if it could not.
+    public var planFailure: String?
     /// Higher for later coordinator states; the app keeps the newest.
     public var revision: Int
 
@@ -35,6 +37,7 @@ public struct FocusSnapshot: Equatable, Sendable {
                 earlyEndAvailableAt: Date? = nil, policy: CompiledPolicy? = nil,
                 pendingRuleEdit: PendingRuleEdit? = nil, pendingException: PendingException? = nil,
                 quickTimer: QuickTimer? = nil, planRun: PlanRun? = nil, planDeadline: Date? = nil,
+                planFailure: String? = nil,
                 revision: Int = 0) {
         self.currentTaskTitle = currentTaskTitle
         self.session = session
@@ -46,6 +49,7 @@ public struct FocusSnapshot: Equatable, Sendable {
         self.quickTimer = quickTimer
         self.planRun = planRun
         self.planDeadline = planDeadline
+        self.planFailure = planFailure
         self.revision = revision
     }
 

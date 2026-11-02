@@ -144,4 +144,12 @@ struct PlanSessionsTests {
         #expect(autumnSessions.map { $0.end.timeIntervalSince($0.start) } == [3600, 7200])
         #expect(autumnSessions[0].end == autumnSessions[1].start)
     }
+
+    @Test func aBlockInTheRepeatedHourRunsFromTheFirstOccurrence() {
+        // 01:30 first happens at 05:30 UTC (EDT); 02:00 is after the repeat, 07:00 UTC (EST).
+        let autumn = plan([block(1, .task, (1, 30), (2, 0), taskID: 7)], on: fallBack)
+        let session = PlanSessions.sessions(in: autumn, timeZone: newYork).first
+        #expect(session?.start == instant("2026-11-01T05:30:00Z"))
+        #expect(session.map { $0.end.timeIntervalSince($0.start) } == TimeInterval(90 * 60))
+    }
 }

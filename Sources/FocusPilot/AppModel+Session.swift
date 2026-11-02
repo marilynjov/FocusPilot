@@ -51,6 +51,15 @@ extension AppModel {
                 await self?.reconcileQuickTimer()
             }
         }
+        // A plan block's instant moves when the clock, the time zone or the
+        // day changes, so the wait for the next deadline is out of date.
+        for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSSystemClockDidChange, .NSCalendarDayChanged] {
+            Task { [weak self] in
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    await self?.run { try await $0.reconcile() }
+                }
+            }
+        }
     }
 
     /// Retries until it succeeds: until the wake's revision is published,

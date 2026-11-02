@@ -18,6 +18,13 @@ extension TaskRepository {
             for effect in transition.effects {
                 switch effect {
                 case .persist(let session):
+                    // A new session never joins one still active: the
+                    // coordinator serializes steps, and this keeps two
+                    // starts from both being stored as running regardless.
+                    if try !SessionRow.exists(db, key: session.id.uuidString),
+                       let latest = try SessionRow.order(Column.rowID.desc).fetchOne(db)?.session(), !latest.hasEnded {
+                        throw FocusEngineError.sessionAlreadyActive
+                    }
                     try SessionRow(session).save(db)
                 case .publishPolicy:
                     revisions.append(try Self.nextPolicyRevision(db))

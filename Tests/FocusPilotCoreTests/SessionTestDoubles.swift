@@ -28,6 +28,7 @@ struct SessionFixture {
     let location: StorageLocation
     let clock: SettableClock
     let uptime = SettableUptime()
+    let zone = SettableTimeZone(bogota)
     let publisher = RecordingPolicyPublisher()
     let notices = RecordingNoticeSink()
     let coordinator: FocusCoordinator
@@ -35,7 +36,7 @@ struct SessionFixture {
     init(at start: Date = wednesdayMorningInBogota) async throws {
         location = StorageLocation(directory: try makeTemporaryDirectory())
         clock = SettableClock(start)
-        coordinator = try Self.coordinator(at: location, clock: clock, uptime: uptime, publisher: publisher, notices: notices)
+        coordinator = try Self.coordinator(at: location, clock: clock, uptime: uptime, zone: zone, publisher: publisher, notices: notices)
         try await coordinator.capture(NewTask(title: "Explain baseline results"))
         let id = try await coordinator.todayTasks()[0].id
         try await coordinator.moveTask(id, to: .now, .top)
@@ -43,7 +44,7 @@ struct SessionFixture {
 
     /// A second coordinator on the same database, as after quitting and relaunching.
     func relaunched() throws -> FocusCoordinator {
-        try Self.coordinator(at: location, clock: clock, uptime: uptime, publisher: publisher, notices: notices)
+        try Self.coordinator(at: location, clock: clock, uptime: uptime, zone: zone, publisher: publisher, notices: notices)
     }
 
     /// Lets time pass on both the wall clock and the monotonic clock.
@@ -57,11 +58,27 @@ struct SessionFixture {
     }
 
     private static func coordinator(at location: StorageLocation, clock: SettableClock, uptime: SettableUptime,
-                                    publisher: RecordingPolicyPublisher, notices: RecordingNoticeSink) throws -> FocusCoordinator {
+                                    zone: SettableTimeZone, publisher: RecordingPolicyPublisher,
+                                    notices: RecordingNoticeSink) throws -> FocusCoordinator {
         let now: @Sendable () -> Date = { clock.now }
         return FocusCoordinator(repository: try TaskRepository(location: location, now: now),
                                 publisher: publisher, notices: notices, now: now,
-                                uptime: { uptime.now }, timeZone: { bogota })
+                                uptime: { uptime.now }, timeZone: { zone.now })
+    }
+}
+
+/// The Mac's time zone, which a test changes as if the owner travelled.
+final class SettableTimeZone: Sendable {
+    private let zone: Mutex<TimeZone>
+
+    init(_ zone: TimeZone) {
+        self.zone = Mutex(zone)
+    }
+
+    var now: TimeZone { zone.withLock { $0 } }
+
+    func set(_ newZone: TimeZone) {
+        zone.withLock { $0 = newZone }
     }
 }
 
