@@ -31,7 +31,8 @@ struct TaskList: View {
                             // The list measures a row once; a new identity when
                             // the card's session controls change makes it
                             // measure again instead of cutting the card off.
-                            .id(model.map(NowCard.layoutKey))
+                            .id(model.map { NowCard.layoutKey($0, item: sections.now) })
+                            .transaction { $0.animation = nil }
                             .tag(sections.now?.id)
                             .listRowSeparator(.hidden)
                     }

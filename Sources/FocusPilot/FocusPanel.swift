@@ -51,6 +51,15 @@ final class FocusPanelController {
             panel.setContentSize(host.fittingSize)
             panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
+        // Keep it whole on a connected screen, e.g. after a display was
+        // removed or the small pill was left near an edge.
+        let visible = (NSScreen.screens.first { $0.frame.intersects(panel.frame) } ?? NSScreen.main)?.visibleFrame
+        if let visible {
+            var frame = panel.frame
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+            panel.setFrame(frame, display: false)
+        }
         panel.setFrameAutosaveName("FocusPanel")
         panel.orderFrontRegardless()
         self.panel = panel

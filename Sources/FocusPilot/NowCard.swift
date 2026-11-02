@@ -67,20 +67,25 @@ struct NowCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// Changes whenever the card's session area changes height: a session
-    /// starting or ending, its phase, and the confirmations and plan
-    /// prompts `SessionControls` shows.
-    static func layoutKey(_ model: AppModel) -> String {
-        guard let session = model.snapshot.activeSession else { return "none" }
-        let phase = switch session.phase {
-        case .running: "running"
-        case .paused: "paused"
-        case .onBreak: "break"
-        case .ended: "ended"
+    /// Changes whenever the card changes height: another task, its next
+    /// action or remaining work appearing, a session starting or ending, its
+    /// phase, and the confirmations and plan prompts `SessionControls` shows.
+    static func layoutKey(_ model: AppModel, item: TodayItem?) -> String {
+        var parts = [item.map { "\($0.id)" } ?? "empty", "\(item?.nextAction != nil)",
+                     "\(item?.wrapUp?.remainingWork != nil)"]
+        if let session = model.snapshot.activeSession {
+            let phase = switch session.phase {
+            case .running: "running"
+            case .paused: "paused"
+            case .onBreak: "break"
+            case .ended: "ended"
+            }
+            let run = model.snapshot.activePlanRun
+            parts += [session.id.uuidString, phase, "\(model.snapshot.earlyEndAvailableAt != nil)",
+                      "\(model.isConfirmingEarlyEnd)", "\(model.task(session.taskID)?.wrapUp != nil)",
+                      "\(run != nil)", "\(run?.moreTimeRequestedAt != nil)"]
         }
-        return [session.id.uuidString, phase, "\(model.snapshot.earlyEndAvailableAt != nil)",
-                "\(model.isConfirmingEarlyEnd)", "\(model.task(session.taskID)?.wrapUp != nil)",
-                "\(model.snapshot.planRun != nil)"].joined(separator: "|")
+        return parts.joined(separator: "|")
     }
 
     /// Start focus, or the session already running.
