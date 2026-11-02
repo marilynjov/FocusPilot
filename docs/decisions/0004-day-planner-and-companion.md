@@ -28,13 +28,15 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - 2026-11-01: Herdr agent monitoring becomes a setting the owner turns on or off. With it off, the app does not run Herdr commands.
 - 2026-11-01: Additions: replanning when a block runs over, estimated vs. actual tracking, breaks inside long blocks and buffers between tasks, a parking lot for stray thoughts during focus, an end-of-day review, a menu bar countdown, and focus stats.
 - 2026-11-01: Compact views: a menu bar countdown with a small menu, a mini floating panel, and a raccoon-only mode.
+- 2026-11-02: Raccoon art comes from the owner's "Raccoon Pet: poses & emotions" sheet (20 named poses such as Idle, Working, Waiting). Each pose is split into layers: body, head, a closed-eyes head for blinking, objects that never move (laptop, sign, wall, ledge and paws), floating effects (hearts, zzz, steam) and the floor shadow. The shadow never moves sideways except under the walking pose, and walking swings four separate legs. This replaces the earlier proposal of whole-pose crossfades.
+- 2026-11-02: Color palettes, each with light and dark versions that follow the Mac's appearance by default: Raccoon (warm), Neutral, Colorful (pastel in light mode), Forest, and System (based on the Phase 1 macOS look, with a softer, brown-free dark mode). Exact colors are on screen 7 of the design canvas.
 
 ## Proposed
 
 - Agent monitoring is off by default for a new install.
 - Working hours and a daily fixed block such as lunch are owner preferences stored in the app. Calendar sync stays a release exclusion ([Product](../PRODUCT.md#release-exclusions)).
 - The raccoon has three presence modes: stays on screen, peeks in for reminders only, and off. It lives in a borderless, transparent, always-on-top window that lets clicks pass through except on its speech bubble (validate on macOS 26, including full-screen apps and multiple displays).
-- Raccoon art: single poses from the owner's 20-pose sheet, animated with code (breathing, a small bob while walking, a hop to celebrate, crossfades between poses) instead of cycling AI-generated frames, which jitter because each frame is drawn separately. Real frame animation later should be drawn from one base sprite. The "Reduce motion" setting turns motion off.
+- Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The "Reduce motion" setting turns all raccoon motion off.
 - Raccoon moments: peek in at 10 minutes left, work alongside during focus, walk in 2 minutes before a break, coffee during breaks, nap at lunch, celebrate a finished block, cheer with "You got this" when a blocked site is opened, and change poses between blocks.
 - Quick timer presets: 10, 20, 30 and 45 minutes; the raccoon warns at 2 minutes left.
 - Stats count only time in planned blocks and quick timers, never total screen time ([Product](../PRODUCT.md#principles), principle 8). The planner may propose a buffer from past estimate accuracy ("big tasks take you about 20% longer"); it never changes plans without approval.
@@ -50,7 +52,8 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - Which model provider and model the planner uses, and whether the owner supplies an API key.
 - Whether the owner owns usage rights to the raccoon sprite sheets, which were AI-generated, before any public release.
 - Default length of breaks inside long blocks and of the buffer between tasks.
+- Which palette a new install starts with.
 
 ## Mockups
 
-The owner's design canvas (private link, 2026-11-01) has five screens: plan my day (approval), today (focus, quick timer, agent monitoring switch, raccoon mode), raccoon on the desktop, compact views, and stats with estimated vs. actual time.
+The owner's design canvas (private link, updated 2026-11-02) has seven screens: plan my day (approval), today (focus, quick timer, agent monitoring switch, raccoon mode), raccoon on the desktop, compact views, stats with estimated vs. actual time, raccoon moods (all 20 poses animated), and color palettes with agent monitoring on.
