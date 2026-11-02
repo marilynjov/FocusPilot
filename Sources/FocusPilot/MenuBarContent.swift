@@ -75,8 +75,7 @@ struct MenuBarContent: View {
             } label: {
                 Text("Start focus…").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(AccentButtonStyle())
             .disabled(model.nowTask == nil)
             .accessibilityHint(model.nowTask.map { "Starts a session for \($0.title)" } ?? "")
         }

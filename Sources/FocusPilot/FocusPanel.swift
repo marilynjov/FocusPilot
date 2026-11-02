@@ -38,7 +38,7 @@ final class FocusPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        let host = NSHostingView(rootView: FocusPanelView(model: model))
+        let host = NSHostingView(rootView: FocusPanelView(model: model).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         if !panel.setFrameUsingName("FocusPanel"), let screen = NSScreen.main?.visibleFrame {
@@ -55,6 +55,7 @@ struct FocusPanelView: View {
     let model: AppModel
     @State private var isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.palette) private var palette
 
     init(model: AppModel, isCollapsed: Bool = false) {
         self.model = model
@@ -107,7 +108,7 @@ struct FocusPanelView: View {
         return Button { isCollapsed = false } label: {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(session.phase == .running ? Color.accentColor : Color.secondary)
+                    .fill(session.phase == .running ? palette.color(.accent) : Color.secondary)
                     .frame(width: 7, height: 7)
                     .contrastOutline()
                 Text(reduceMotion ? text.minutesLeft(at: model.now) : text.timeLeft(at: model.now))

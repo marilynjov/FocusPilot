@@ -92,12 +92,13 @@ struct SessionHeader: View {
     let now: Date
     var timeFont: Font = .title.weight(.medium)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.palette) private var palette
 
     var body: some View {
         let text = SessionText(session)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Circle()
-                .fill(session.phase == .running ? Color.accentColor : Color.secondary)
+                .fill(session.phase == .running ? palette.color(.accent) : Color.secondary)
                 .frame(width: 7, height: 7)
                 .contrastOutline()
                 .accessibilityHidden(true)

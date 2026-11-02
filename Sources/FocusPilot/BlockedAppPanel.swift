@@ -72,7 +72,7 @@ final class BlockedAppPanelController {
                 model?.planningWindowRequests += 1
             },
             excepted: { [weak blocker] app in blocker?.showExcepted(app) },
-            close: { [weak self] in self?.close() })))
+            close: { [weak self] in self?.close() })).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         return panel
