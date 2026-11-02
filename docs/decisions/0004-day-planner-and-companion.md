@@ -30,10 +30,13 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - 2026-11-01: Compact views: a menu bar countdown with a small menu, a mini floating panel, and a raccoon-only mode.
 - 2026-11-02: Raccoon art comes from the owner's "Raccoon Pet: poses & emotions" sheet (20 named poses such as Idle, Working, Waiting). Each pose is split into layers: body, head, a closed-eyes head for blinking, objects that never move (laptop, sign, wall, ledge and paws), floating effects (hearts, zzz, steam) and the floor shadow. The shadow never moves sideways except under the walking pose, and walking swings four separate legs. This replaces the earlier proposal of whole-pose crossfades.
 - 2026-11-02: Color palettes, each with light and dark versions that follow the Mac's appearance by default: Raccoon (warm), Neutral, Colorful (pastel in light mode), Forest, and System (based on the Phase 1 macOS look, with a softer, brown-free dark mode). Exact colors are on screen 7 of the design canvas.
+- 2026-11-02: The AI planner (D9, issue #10) uses Claude through the Anthropic API with the owner's own API key, stored in the macOS Keychain. The API is called directly over HTTPS; no SDK dependency is added. This settles the provider part of decision 0001's open item on model choice.
+- 2026-11-02: Defaults: a 10-minute break after every 90 minutes of focus inside a long task block, and a 5-minute buffer between task blocks.
+- 2026-11-02: A new install starts with the Colorful palette, following the Mac's light or dark appearance.
+- 2026-11-02: Agent monitoring is off by default for a new install.
 
 ## Proposed
 
-- Agent monitoring is off by default for a new install.
 - Working hours and a daily fixed block such as lunch are owner preferences stored in the app. Calendar sync stays a release exclusion ([Product](../PRODUCT.md#release-exclusions)).
 - The raccoon has three presence modes: stays on screen, peeks in for reminders only, and off. It lives in a borderless, transparent, always-on-top window that lets clicks pass through except on its speech bubble (validate on macOS 26, including full-screen apps and multiple displays).
 - Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The macOS accessibility setting Reduce motion turns all raccoon motion off.
@@ -50,10 +53,9 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 
 ## Open decisions
 
-- Which model provider and model the planner uses, and whether the owner supplies an API key.
+- Which Claude model the planner uses (decided in D9, issue #10, with its cost per plan).
+- Which context the planner may send to Claude: proposed, only the text the owner typed and the task list, each request opt-in (from decision 0001's open item on context scope).
 - Whether the owner owns usage rights to the raccoon sprite sheets, which were AI-generated, before any public release.
-- Default length of breaks inside long blocks and of the buffer between tasks.
-- Which palette a new install starts with.
 
 ## Mockups
 
