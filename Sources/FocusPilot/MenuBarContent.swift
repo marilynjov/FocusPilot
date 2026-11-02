@@ -5,7 +5,8 @@ import SwiftUI
 /// The menu bar popover (design 03): the Now task and Start focus when idle;
 /// during a session its phase, time left, task and Pause/Complete, and
 /// protection status (#17): Browsers, Safari and Apps as separate facts,
-/// since app hiding needs FocusPilot running. iPhone and agent lines arrive
+/// since app hiding needs FocusPilot running. Below that, quick timer
+/// presets or the running timer (D2). iPhone and agent lines arrive
 /// with #22 and #19.
 struct MenuBarContent: View {
     let model: AppModel
@@ -23,6 +24,10 @@ struct MenuBarContent: View {
             }
             .padding(16)
 
+            Divider()
+            QuickTimerMenuSection(model: model)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             Divider()
             VStack(alignment: .leading, spacing: 0) {
                 MenuRow("Open FocusPilot", shortcut: "⌘O") { openPlanning() }
@@ -200,6 +205,47 @@ private struct SiteExceptionLines: View {
             Label(line, systemImage: "timer")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Quick timer presets, or the running timer with Finish and Stop (D2). A
+/// label and a custom length are set on the Today card.
+private struct QuickTimerMenuSection: View {
+    let model: AppModel
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let timer = model.snapshot.quickTimer {
+                Label(QuickTimerText.title(timer), systemImage: "timer")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                QuickTimerStatus(timer: timer, now: model.now)
+                HStack(spacing: 8) {
+                    Button { Task { await model.finishQuickTimer() } } label: {
+                        Text("Finish").frame(maxWidth: .infinity)
+                    }
+                    Button { Task { await model.stopQuickTimer() } } label: {
+                        Text("Stop").frame(maxWidth: .infinity)
+                    }
+                }
+            } else {
+                Label("Quick timer", systemImage: "timer")
+                    .font(.callout)
+                    .foregroundStyle(palette.color(.muted))
+                HStack(spacing: 6) {
+                    ForEach(QuickTimer.presetMinutes, id: \.self) { minutes in
+                        Button { Task { await model.startQuickTimer(minutes: minutes) } } label: {
+                            Text("\(minutes) min").frame(maxWidth: .infinity)
+                        }
+                        .accessibilityLabel("Start a \(minutes)-minute timer")
+                    }
+                }
+            }
+            if let error = model.quickTimerError {
+                Text(error).font(.callout).foregroundStyle(palette.color(.muted))
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ extension FocusCoordinator {
         if policy == nil {
             try await publish(repository.republish())
         }
+        try await launchQuickTimer()
     }
 
     /// Starts a session on the pinned Now task.

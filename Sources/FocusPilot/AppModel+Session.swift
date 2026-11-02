@@ -27,6 +27,7 @@ extension AppModel {
                 show(snapshot)
                 track(snapshot)
                 scheduleReconcile(at: snapshot.nextDeadline)
+                scheduleQuickTimerReconcile(at: snapshot.quickTimer?.nextDeadline)
                 focusPanel.update()
                 // Rules name the apps the Apps line shows; every rule edit publishes a policy.
                 if snapshot.policy?.revision != policyRevision {
@@ -40,6 +41,7 @@ extension AppModel {
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.didWakeNotification) {
                 // Before reconciling, which publishes the revision Chrome must confirm.
                 self?.markProtectionStale()
+                await self?.reconcileQuickTimer()
                 await self?.reconcileAfterWake()
             }
         }

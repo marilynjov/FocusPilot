@@ -68,8 +68,12 @@ final class AppModel {
     var dayPlanError: String?
     var dayPreferences = DayPreferences.standard
     var dayPreferencesError: String?
+    /// Why the last quick timer command failed (D2); see `AppModel+QuickTimer.swift`.
+    var quickTimerError: String?
     /// Pending reconcile at the next session deadline.
     @ObservationIgnored var reconcileTask: Task<Void, Never>?
+    /// Pending reconcile at the quick timer's next notice.
+    @ObservationIgnored var quickTimerTask: Task<Void, Never>?
     @ObservationIgnored lazy var focusPanel = FocusPanelController(model: self)
     @ObservationIgnored lazy var appBlocker = AppBlocker(model: self)
     let loginItem = LoginItemSettings(service: MainAppLoginItem())
@@ -178,14 +182,14 @@ final class AppModel {
         MenuBarStatus(snapshot: snapshot, now: now, showsTime: menuBarPreferences.showsTime, reducesMotion: reducesMotion)
     }
 
-    // Advances `now` once a second while a session is active (its time is
-    // on screen in the popover and panel), so an idle app is not redrawn
-    // every second.
+    // Advances `now` once a second while a session or quick timer is
+    // running (its time is on screen in the popover and panel), so an idle
+    // app is not redrawn every second.
     private func tickWhileTimeIsShown() {
         Task { [weak self] in
             while let self {
                 try? await Task.sleep(for: .seconds(1))
-                if snapshot.activeSession != nil || menuBarStatus().timeText != nil {
+                if snapshot.activeSession != nil || snapshot.quickTimer != nil || menuBarStatus().timeText != nil {
                     now = .now
                 }
             }

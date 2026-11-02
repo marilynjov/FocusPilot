@@ -22,12 +22,15 @@ public struct FocusSnapshot: Equatable, Sendable {
     public var pendingRuleEdit: PendingRuleEdit?
     /// A strict-session exception waiting out its delay.
     public var pendingException: PendingException?
+    /// The quick timer still running (D2), separate from any session.
+    public var quickTimer: QuickTimer?
     /// Higher for later coordinator states; the app keeps the newest.
     public var revision: Int
 
     public init(currentTaskTitle: String? = nil, session: FocusSession? = nil, observeSince: Date? = nil,
                 earlyEndAvailableAt: Date? = nil, policy: CompiledPolicy? = nil,
-                pendingRuleEdit: PendingRuleEdit? = nil, pendingException: PendingException? = nil, revision: Int = 0) {
+                pendingRuleEdit: PendingRuleEdit? = nil, pendingException: PendingException? = nil,
+                quickTimer: QuickTimer? = nil, revision: Int = 0) {
         self.currentTaskTitle = currentTaskTitle
         self.session = session
         self.observeSince = observeSince
@@ -35,6 +38,7 @@ public struct FocusSnapshot: Equatable, Sendable {
         self.policy = policy
         self.pendingRuleEdit = pendingRuleEdit
         self.pendingException = pendingException
+        self.quickTimer = quickTimer
         self.revision = revision
     }
 
@@ -52,7 +56,9 @@ public struct FocusSnapshot: Equatable, Sendable {
     }
 
     /// When the coordinator must next be asked to reconcile, such as the
-    /// planned end, the end of a break or an exception expiring.
+    /// planned end, the end of a break or an exception expiring. A quick
+    /// timer has its own (`QuickTimer.nextDeadline`): reconciling it
+    /// publishes no policy.
     public var nextDeadline: Date? {
         ([activeSession?.nextDeadline] + (policy?.exceptions.map(\.expiresAt) ?? [])).compactMap { $0 }.min()
     }

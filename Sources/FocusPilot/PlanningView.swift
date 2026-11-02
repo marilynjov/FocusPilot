@@ -128,7 +128,19 @@ struct PlanningView: View {
             ReviewQueueView(model: model)
         } else if page == .settings {
             SettingsPage(model: model)
-        } else if model.today.isEmpty {
+        } else {
+            VStack(spacing: 0) {
+                QuickTimerCard(model: model)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                todayTasks
+            }
+        }
+    }
+
+    /// Today's tasks under the Quick timer card (D2).
+    @ViewBuilder private var todayTasks: some View {
+        if model.today.isEmpty {
             ContentUnavailableView(
                 "No tasks yet",
                 systemImage: "sun.max",
