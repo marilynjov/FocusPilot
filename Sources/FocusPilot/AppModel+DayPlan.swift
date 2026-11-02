@@ -74,9 +74,15 @@ extension AppModel {
     func saveDayPreferences(_ preferences: DayPreferences) async {
         guard let coordinator else { return }
         do {
-            try await coordinator.saveDayPreferences(preferences)
+            let saved = try await coordinator.saveDayPreferences(preferences, today: todayDate)
             dayPreferences = preferences
-            dayPreferencesError = nil
+            if case .todayKept(let hours) = saved {
+                dayPreferencesError = "Saved for new days. Today’s plan keeps \(DayPlanText.times(hours)) because a block "
+                    + "is outside the new hours; move it first to change today too."
+            } else {
+                dayPreferencesError = nil
+            }
+            await loadDayPlan()
         } catch DayPlanError.invalid(let problem) {
             dayPreferencesError = "Not saved: \(DayPlanText.message(problem))"
         } catch {
