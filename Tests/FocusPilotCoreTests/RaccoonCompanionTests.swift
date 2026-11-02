@@ -129,9 +129,13 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .paused) == RaccoonPresence(poseID: "sit"))
     }
 
-    @Test func theWindowShowsTheTaskUnlessOff() {
+    @Test func theWindowShowsTheTaskOnlyInOnScreenModeAndNeverDuringAPeek() {
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working) == RaccoonPresence(poseID: "laptop"))
-        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working) == RaccoonPresence(poseID: "laptop"))
+        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working) == nil)
+        // A peek shows in the floating window only, never in both.
+        let peek = RaccoonPeek(poseID: "peek")
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, peek: peek) == nil)
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: nil) == nil)
         #expect(RaccoonPresence.inWindow(mode: .off, activity: .working) == nil)
     }

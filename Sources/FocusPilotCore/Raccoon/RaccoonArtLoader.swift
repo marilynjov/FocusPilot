@@ -249,10 +249,12 @@ public struct RaccoonPresence: Equatable, Sendable {
         }
     }
 
-    /// The planning window: the task's pose while a session is under way,
-    /// unless the raccoon is off.
-    public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?) -> RaccoonPresence? {
-        guard mode != .off, let activity else { return nil }
+    /// The planning window, in On screen mode: the task's pose while a
+    /// session is under way. Hidden during a peek, which the floating
+    /// window shows, so there is only ever one raccoon.
+    public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?,
+                                peek: RaccoonPeek? = nil) -> RaccoonPresence? {
+        guard mode == .staysOnScreen, peek == nil, let activity else { return nil }
         return RaccoonPresence(poseID: activity.poseID)
     }
 }

@@ -31,35 +31,40 @@ final class RaccoonCompanionController {
     private var art: RaccoonArt?
     private var artError: String?
     private var shown: RaccoonPresence?
-    private var peek: RaccoonPeek?
     private var peekTask: Task<Void, Never>?
     private var observers: [Task<Void, Never>] = []
 
     init(model: AppModel) {
         self.model = model
-        // Recreate the motion when Reduce Motion changes, and move to the
-        // corner again when displays change.
+        // Recreate the motion when Reduce Motion changes.
         observers.append(Task { [weak self] in
             let name = NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: name) {
-                self?.redraw()
+                guard let self else { break }
+                redraw()
             }
         })
-        // In the window while FocusPilot is in front, on screen otherwise.
-        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+        // In the window while FocusPilot is in front and its window is not
+        // minimized, on screen otherwise.
+        let names = [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                     NSWindow.didBecomeKeyNotification]
+        for name in names {
             observers.append(Task { [weak model] in
                 for await _ in NotificationCenter.default.notifications(named: name) {
-                    model?.isAppActive = NSApplication.shared.isActive
+                    guard let model else { break }
+                    model.refreshRaccoonWindowState()
                 }
             })
         }
+        // Move to the corner again when displays change.
         observers.append(Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(named: NSApplication.didChangeScreenParametersNotification) {
-                self?.placePanel()
+                guard let self else { break }
+                placePanel()
             }
         })
     }
-
 
     /// Why the art could not be loaded, if it could not.
     var problem: String? { artError }
@@ -67,7 +72,7 @@ final class RaccoonCompanionController {
     /// Shows, changes or hides the raccoon for the current mode and session.
     func update() {
         let presence = RaccoonPresence.resolve(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
-                                               isWindowOpen: model.raccoonIsInWindow, peek: peek)
+                                               isWindowOpen: model.raccoonIsInWindow, peek: model.raccoonPeek)
         guard presence != shown || (presence != nil && panel == nil) else { return }
         shown = presence
         if let presence { show(presence) } else { hide() }
@@ -76,7 +81,7 @@ final class RaccoonCompanionController {
     /// Brings the raccoon in with `peek` for `duration` (D12 reminders),
     /// replacing any earlier peek. In Off mode nothing shows.
     func peek(_ peek: RaccoonPeek, for duration: Duration = defaultPeek) {
-        self.peek = peek
+        model.raccoonPeek = peek
         peekTask?.cancel()
         peekTask = Task { [weak self] in
             try? await Task.sleep(for: duration)
@@ -89,7 +94,7 @@ final class RaccoonCompanionController {
     func endPeek() {
         peekTask?.cancel()
         peekTask = nil
-        peek = nil
+        model.raccoonPeek = nil
         update()
     }
 
@@ -510,8 +515,9 @@ struct RaccoonWindowView: View {
     let model: AppModel
 
     var body: some View {
-        if model.isAppActive,
-           let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity),
+        if model.raccoonIsInWindow,
+           let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
+                                                   peek: model.raccoonPeek),
            let art = model.raccoon.loadArt() {
             RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
