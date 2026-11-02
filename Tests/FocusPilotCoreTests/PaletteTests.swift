@@ -102,4 +102,15 @@ struct DisplayPreferencesTests {
         #expect(reopened.appearance == .dark)
         #expect(reopened.colors(system: .light, increaseContrast: false).appearance == .dark)
     }
+
+    @Test func everyAppearanceChangeIsReported() {
+        let preferences = DisplayPreferences(defaults: defaults)
+        var applied: [AppearanceSetting] = []
+        preferences.appearanceDidChange = { applied.append($0) }
+
+        preferences.appearance = .light
+        preferences.appearance = .followMac
+
+        #expect(applied == [.light, .followMac])
+    }
 }

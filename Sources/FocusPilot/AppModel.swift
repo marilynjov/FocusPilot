@@ -94,6 +94,7 @@ final class AppModel {
             startupError = "Could not open the database: \(error.localizedDescription)"
         }
         displayPreferences.applyAppearance()
+        displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
         refreshLoginItem(on: NSApplication.didBecomeActiveNotification)
         tickWhileTimeIsShown()

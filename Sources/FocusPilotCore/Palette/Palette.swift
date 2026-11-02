@@ -159,11 +159,14 @@ public enum PaletteContrast {
         [PaletteRole.ink, .muted].flatMap { text in [PaletteRole.bg, .chrome, .side, .surface].map { (text, $0) } }
             + [(.onAccent, .accent), (.t1fg, .t1bg), (.t2fg, .t2bg), (.t3fg, .t3bg), (.lunchfg, .lunchbg), (.breakfg, .breakbg)]
 
-    /// Status dots and the accent as a fill: 3:1 against the surfaces they
-    /// sit on (WCAG 1.4.11, non-text contrast). Status labels themselves are
-    /// drawn in `ink`, never in these colors, so they meet 4.5:1 as text.
+    /// Status dots and the accent as a fill: 3:1 against every background
+    /// they can sit on (WCAG 1.4.11, non-text contrast). Status labels
+    /// themselves are drawn in text colors, never in these, so they are held
+    /// to 4.5:1 as text.
     public static let graphicPairs: [(mark: PaletteRole, background: PaletteRole)] =
-        [PaletteRole.accent, .blocked, .ready, .unknown].flatMap { mark in [PaletteRole.bg, .surface].map { (mark, $0) } }
+        [PaletteRole.accent, .blocked, .ready, .unknown].flatMap { mark in
+            [PaletteRole.bg, .chrome, .side, .surface].map { (mark, $0) }
+        }
 
     public static let textMinimum = 4.5
     public static let graphicMinimum = 3.0
@@ -270,7 +273,7 @@ enum PaletteTable {
             .breakfg: "#5A5A60",
             .blocked: "#8C5E12",
             .ready: "#36694C",
-            .unknown: "#8A8A90",
+            .unknown: "#898990", // Approved #8A8A90; adjusted for contrast, pending owner approval.
         ]
         case (.neutral, .dark): [
             .page: "#0F0F10",
@@ -374,7 +377,7 @@ enum PaletteTable {
             .breakfg: "#56625A",
             .blocked: "#9A5F0E",
             .ready: "#2E7046",
-            .unknown: "#869089", // Approved #87918A; adjusted for contrast, pending owner approval.
+            .unknown: "#828C85", // Approved #87918A; adjusted for contrast, pending owner approval.
         ]
         case (.forest, .dark): [
             .page: "#0E1210",
@@ -426,7 +429,7 @@ enum PaletteTable {
             .breakfg: "#5E5E63",
             .blocked: "#B25F00",
             .ready: "#1E7B34",
-            .unknown: "#8E8E93",
+            .unknown: "#8C8C92", // Approved #8E8E93; adjusted for contrast, pending owner approval.
         ]
         case (.system, .dark): [
             .page: "#141416",

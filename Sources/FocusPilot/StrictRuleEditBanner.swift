@@ -14,7 +14,7 @@ struct StrictRuleEditBanner: View {
                    detail: RuleText.applyCountdown(availableAt: pending.availableAt, now: model.now)) {
                 Button("Keep Rule") { Task { await model.cancelRuleEdit() } }
                 Button("Apply Change") { Task { await model.perform(pending.edit, confirmed: false) } }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .disabled(model.now < pending.availableAt)
             }
         } else if let edit = model.ruleEditToConfirm {

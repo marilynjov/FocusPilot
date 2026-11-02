@@ -7,8 +7,8 @@ import Observation
 @MainActor
 @Observable
 public final class DisplayPreferences {
-    private static let paletteKey = "palette"
-    private static let appearanceKey = "appearance"
+    private static let paletteKey = "paletteName"
+    private static let appearanceKey = "appearanceSetting"
 
     private let defaults: UserDefaults
 
@@ -16,9 +16,17 @@ public final class DisplayPreferences {
         didSet { defaults.set(palette.rawValue, forKey: Self.paletteKey) }
     }
 
+    /// Every change, from Settings or anywhere else, is saved and passed to
+    /// `appearanceDidChange`, which applies it to the app's windows.
     public var appearance: AppearanceSetting {
-        didSet { defaults.set(appearance.rawValue, forKey: Self.appearanceKey) }
+        didSet {
+            defaults.set(appearance.rawValue, forKey: Self.appearanceKey)
+            appearanceDidChange?(appearance)
+        }
     }
+
+    /// Called with the setting after each change.
+    @ObservationIgnored public var appearanceDidChange: (@MainActor (AppearanceSetting) -> Void)?
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

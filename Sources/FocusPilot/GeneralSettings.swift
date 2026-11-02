@@ -17,7 +17,6 @@ struct GeneralSettings: View {
                 Picker("Appearance", selection: $display.appearance) {
                     ForEach(AppearanceSetting.allCases) { Text($0.title).tag($0) }
                 }
-                .onChange(of: display.appearance) { display.applyAppearance() }
             }
             Section("Menu bar") {
                 Toggle("Show time left in the menu bar", isOn: $preferences.showsTime)

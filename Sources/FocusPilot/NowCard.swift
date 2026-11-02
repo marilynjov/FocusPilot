@@ -86,7 +86,8 @@ struct NowCard: View {
             Button { model.requestStartFocus() } label: {
                 Label("Start focus", systemImage: "play.fill")
             }
-            .buttonStyle(AccentButtonStyle())
+            .accentProminentButton()
+            .controlSize(.large)
             .help("Start focus (⌘⏎)")
             .accessibilityHint("Starts a session for \(item.title)")
         }

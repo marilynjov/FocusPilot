@@ -30,7 +30,7 @@ struct SessionControls: View {
                         Button { Task { await model.complete() } } label: {
                             Label("Complete", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .accentProminentButton()
                     }
                     .controlSize(.large)
                 }
@@ -75,7 +75,7 @@ struct SessionControls: View {
             HStack(spacing: 8) {
                 Button { Task { await model.cancelEarlyEnd() } } label: { wide("Keep focusing") }
                 Button { Task { await model.complete() } } label: { wide("Complete") }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .disabled(!ready)
             }
         }
