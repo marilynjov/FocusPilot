@@ -1,6 +1,6 @@
 # Day planner, quick timer and raccoon companion
 
-Date: 2026-11-01. Status: direction confirmed by the fork owner on 2026-11-01. Items marked "proposed" still need confirmation, and items marked "validate" are unproven platform assumptions.
+Date: 2026-11-01. Status: direction confirmed by the fork owner on 2026-11-01. Items marked "proposed" still need confirmation, and items marked "validate" are unproven platform assumptions. In this fork, "owner" means the fork owner (Marilyn): owner decisions and the sign-offs AGENTS.md asks for go to her. Earlier records (0001–0003) use "owner" for Santiago.
 
 This fork (`marilynjov/FocusPilot`) extends FocusPilot from a focus assistant built around Herdr agents into an assistant that organizes the whole working day. It keeps everything Phase 1 built: tasks and deadlines, focus sessions, app hiding, Chrome enforcement, wrap-up and Herdr status.
 
@@ -13,7 +13,7 @@ Most of what the day planner needs already exists and was hard to get right: hid
 1. The owner describes the day in plain language, e.g. "I work 9 to 5, lunch is 12 to 1 as always, I have three tasks and the first is the most important."
 2. The assistant proposes a day plan: an ordered timeline of blocks (task, break, lunch, wrap-up), each with a start and end and, for task blocks, the block rules that apply.
 3. Nothing starts until the owner approves the plan. The owner can also edit blocks by hand.
-4. When a task block starts, it runs a focus session with its block rules (hidden apps, blocked sites). Breaks and lunch block nothing.
+4. When a task block starts, it runs a focus session with its block rules (hidden apps, blocked sites). Breaks and lunch lift session-only rules in normal sessions; strict sessions and always-on or scheduled rules keep blocking (decision 0003, 2026-10-14).
 5. If a block runs over, the assistant proposes a change to the rest of the day. The owner accepts or keeps the plan.
 6. At the end of the day, a review shows what was done, compares estimated and actual time, and moves unfinished work to tomorrow.
 
@@ -36,15 +36,16 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - Agent monitoring is off by default for a new install.
 - Working hours and a daily fixed block such as lunch are owner preferences stored in the app. Calendar sync stays a release exclusion ([Product](../PRODUCT.md#release-exclusions)).
 - The raccoon has three presence modes: stays on screen, peeks in for reminders only, and off. It lives in a borderless, transparent, always-on-top window that lets clicks pass through except on its speech bubble (validate on macOS 26, including full-screen apps and multiple displays).
-- Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The "Reduce motion" setting turns all raccoon motion off.
+- Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The macOS accessibility setting Reduce motion turns all raccoon motion off.
 - Raccoon moments: peek in at 10 minutes left, work alongside during focus, walk in 2 minutes before a break, coffee during breaks, nap at lunch, celebrate a finished block, cheer with "You got this" when a blocked site is opened, and change poses between blocks.
 - Quick timer presets: 10, 20, 30 and 45 minutes; the raccoon warns at 2 minutes left.
-- Stats count only time in planned blocks and quick timers, never total screen time ([Product](../PRODUCT.md#principles), principle 8). The planner may propose a buffer from past estimate accuracy ("big tasks take you about 20% longer"); it never changes plans without approval.
+- Stats count only time in planned blocks and quick timers, never total screen time, and show what was done next to the time (from wrap-ups and finished blocks), because time in a block is not proof of output ([Product](../PRODUCT.md#principles), principle 8). The planner may propose a buffer from past estimate accuracy ("big tasks take you about 20% longer"); it never changes plans without approval.
 
 ## Conflicts with earlier decisions
 
-- Coaching was planned only after the quiet focus loop is reliable, behind an experiment flag ([Product](../PRODUCT.md#first-release-scope)). The raccoon's warnings are coaching, so they ship as an opt-in mode and follow Coach-style suppression and cooldowns.
+- Coaching was planned only after the quiet focus loop is reliable, behind an experiment flag ([Product](../PRODUCT.md#first-release-scope)). The raccoon's warnings are coaching. Proposed: they ship as an opt-in mode and follow Coach-style suppression and cooldowns.
 - The first model calls require local AI usage accounting and a daily admission cap ([Feature matrix](../FEATURE_MATRIX.md), decision 0003). The AI planner ticket includes them.
+- Herdr status is P0 in the [Feature matrix](../FEATURE_MATRIX.md), and decision 0003 (2026-10-15/16) creates projects automatically from new Herdr workspaces. With agent monitoring off, the app runs no Herdr commands, so workspace sync also pauses. Proposed: existing projects and links are kept, sync resumes when monitoring is turned back on, and the `focuspilot` command still adds and reads tasks but without a Herdr project link.
 - The product definition centers on Herdr agents. In this fork the day plan is the center and Herdr is optional; [Product](../PRODUCT.md) needs a revision once this record is accepted.
 
 ## Open decisions
