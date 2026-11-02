@@ -191,11 +191,38 @@ public struct RaccoonPeek: Equatable, Sendable {
     }
 }
 
+/// What the owner's task is doing, as far as the raccoon cares.
+public enum RaccoonActivity: Equatable, Sendable {
+    case working
+    case paused
+    case onBreak
+
+    /// Nil when no session is under way.
+    public init?(_ phase: SessionPhase?) {
+        switch phase {
+        case .running: self = .working
+        case .paused: self = .paused
+        case .onBreak: self = .onBreak
+        case .ended, nil: return nil
+        }
+    }
+
+    /// Working at the laptop, sitting while paused, coffee on a break.
+    public var poseID: String {
+        switch self {
+        case .working: RaccoonPresence.workingPose
+        case .paused: RaccoonPresence.idlePose
+        case .onBreak: RaccoonPresence.breakPose
+        }
+    }
+}
+
 /// What the companion window shows: a pose and an optional bubble, or
 /// nothing. Pure, so the choice is testable without a window.
 public struct RaccoonPresence: Equatable, Sendable {
     public static let idlePose = "sit"
     public static let workingPose = "laptop"
+    public static let breakPose = "coffee"
 
     public var poseID: String
     public var message: String?
@@ -205,10 +232,10 @@ public struct RaccoonPresence: Equatable, Sendable {
         self.message = message
     }
 
-    /// The floating window: Working while a focus session runs and the
-    /// planning window is closed (the window shows it instead); a peek
-    /// replaces that while it lasts. Peeks-in mode shows only peeks.
-    public static func resolve(mode: RaccoonCompanionMode, isFocusing: Bool, isWindowOpen: Bool,
+    /// The floating window: the task's pose while a session is under way
+    /// and the planning window is closed (the window shows it instead); a
+    /// peek replaces that while it lasts. Peeks-in mode shows only peeks.
+    public static func resolve(mode: RaccoonCompanionMode, activity: RaccoonActivity?, isWindowOpen: Bool,
                                peek: RaccoonPeek?) -> RaccoonPresence? {
         switch mode {
         case .off:
@@ -217,13 +244,15 @@ public struct RaccoonPresence: Equatable, Sendable {
             return peek.map { RaccoonPresence(poseID: $0.poseID, message: $0.message) }
         case .staysOnScreen:
             if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
-            return isFocusing && !isWindowOpen ? RaccoonPresence(poseID: workingPose) : nil
+            guard let activity, !isWindowOpen else { return nil }
+            return RaccoonPresence(poseID: activity.poseID)
         }
     }
 
-    /// The planning window: Working while a focus session runs, unless the
-    /// raccoon is off.
-    public static func inWindow(mode: RaccoonCompanionMode, isFocusing: Bool) -> RaccoonPresence? {
-        mode != .off && isFocusing ? RaccoonPresence(poseID: workingPose) : nil
+    /// The planning window: the task's pose while a session is under way,
+    /// unless the raccoon is off.
+    public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?) -> RaccoonPresence? {
+        guard mode != .off, let activity else { return nil }
+        return RaccoonPresence(poseID: activity.poseID)
     }
 }

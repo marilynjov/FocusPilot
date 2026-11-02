@@ -108,32 +108,44 @@ struct RaccoonCompanionTests {
 
     // MARK: Presence
 
-    @Test func onScreenShowsWorkingOnlyWhileATaskRunsAndTheWindowIsClosed() {
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, isFocusing: true, isWindowOpen: false, peek: nil)
+    @Test func onScreenShowsTheTaskOnlyWhileOneIsUnderWayAndTheWindowIsClosed() {
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: nil)
             == RaccoonPresence(poseID: "laptop"))
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, isFocusing: false, isWindowOpen: false, peek: nil) == nil)
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: nil, isWindowOpen: false, peek: nil) == nil)
         // With the window open the raccoon is in the window instead.
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, isFocusing: true, isWindowOpen: true, peek: nil) == nil)
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: nil) == nil)
         #expect(RaccoonArtTests.manifest.pose(RaccoonPresence.workingPose)?.name == "Working")
     }
 
-    @Test func theWindowShowsWorkingWhileATaskRunsUnlessOff() {
-        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, isFocusing: true) == RaccoonPresence(poseID: "laptop"))
-        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, isFocusing: true) == RaccoonPresence(poseID: "laptop"))
-        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, isFocusing: false) == nil)
-        #expect(RaccoonPresence.inWindow(mode: .off, isFocusing: true) == nil)
+    @Test func pausedSitsAndABreakHasCoffee() {
+        #expect(RaccoonActivity(.running) == .working)
+        #expect(RaccoonActivity(.paused(since: .now)) == .paused)
+        #expect(RaccoonActivity(.onBreak(until: .now)) == .onBreak)
+        #expect(RaccoonActivity(.ended(at: .now, reason: .completed)) == nil)
+        #expect(RaccoonActivity(nil) == nil)
+        for activity in [RaccoonActivity.working, .paused, .onBreak] {
+            #expect(RaccoonArtTests.manifest.pose(activity.poseID) != nil, "\(activity)")
+        }
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .paused) == RaccoonPresence(poseID: "sit"))
+    }
+
+    @Test func theWindowShowsTheTaskUnlessOff() {
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working) == RaccoonPresence(poseID: "laptop"))
+        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working) == RaccoonPresence(poseID: "laptop"))
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: nil) == nil)
+        #expect(RaccoonPresence.inWindow(mode: .off, activity: .working) == nil)
     }
 
     @Test func peeksShowOnlyWhenAReminderAsks() {
         let peek = RaccoonPeek(poseID: "peek", message: "10 minutes left")
-        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, isFocusing: true, isWindowOpen: false, peek: nil) == nil)
-        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, isFocusing: false, isWindowOpen: false, peek: peek)
+        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: .working, isWindowOpen: false, peek: nil) == nil)
+        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: nil, isWindowOpen: false, peek: peek)
             == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, isFocusing: true, isWindowOpen: true, peek: peek)?.poseID == "peek")
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
     }
 
     @Test func offShowsNothing() {
-        #expect(RaccoonPresence.resolve(mode: .off, isFocusing: true, isWindowOpen: false, peek: RaccoonPeek(poseID: "peek")) == nil)
+        #expect(RaccoonPresence.resolve(mode: .off, activity: .working, isWindowOpen: false, peek: RaccoonPeek(poseID: "peek")) == nil)
     }
 }
 

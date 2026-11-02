@@ -57,7 +57,7 @@ final class RaccoonCompanionController {
 
     /// Shows, changes or hides the raccoon for the current mode and session.
     func update() {
-        let presence = RaccoonPresence.resolve(mode: model.displayPreferences.raccoonMode, isFocusing: model.isFocusing,
+        let presence = RaccoonPresence.resolve(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
                                                isWindowOpen: model.isPlanningWindowOpen, peek: peek)
         guard presence != shown || (presence != nil && panel == nil) else { return }
         shown = presence
@@ -495,13 +495,13 @@ private extension Array {
 }
 
 /// The raccoon in the planning window's bottom-right corner while a task
-/// runs (owner request, 2026-11-02). It shows the same pose and motion as
+/// is under way (owner request, 2026-11-02). It shows the same pose and motion as
 /// the floating panel and never takes clicks.
 struct RaccoonWindowView: View {
     let model: AppModel
 
     var body: some View {
-        if let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, isFocusing: model.isFocusing),
+        if let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity),
            let art = model.raccoon.loadArt() {
             RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)

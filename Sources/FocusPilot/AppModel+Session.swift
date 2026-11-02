@@ -5,8 +5,9 @@ import FocusPilotCore
 /// keeps the latest snapshot, reconciles at the next deadline and on wake,
 /// and shows or hides the focus panel.
 extension AppModel {
-    /// Whether a focus session is running (not paused or wrapping up).
-    var isFocusing: Bool { snapshot.activeSession?.phase == .running }
+    /// What the current focus session is doing, for the raccoon; nil
+    /// when there is none.
+    var raccoonActivity: RaccoonActivity? { RaccoonActivity(snapshot.activeSession?.phase) }
 
     /// The task a new session would run on: the pinned Now task.
     var nowTask: TodayItem? {
