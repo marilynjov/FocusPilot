@@ -68,7 +68,7 @@ The generator cuts every pose into a horizontal strip of 256 × 256 layers (body
 ./scripts/build-raccoon-art.sh /tmp/raccoon-contact-sheet.png
 ```
 
-The optional path also renders a contact sheet: every pose at rest and, next to it, with the head tilted, eyes closed and legs swung, to check for seams. The generator is deterministic: the same inputs give byte-identical files. It is Swift (`Sources/RaccoonRig`, run through `RenderArtwork raccoon`), with no extra dependencies. `RaccoonArtTests` fail if the committed output is out of date, if the layers at rest differ from the sheet beyond removed specks, or if a still object or the shadow ends up in a moving layer.
+The optional path also renders a contact sheet: every pose at rest and, next to it, with the head tilted, eyes closed and legs swung, to check for seams. The generator is deterministic: on the same macOS version, the same inputs give byte-identical files. A different macOS version may encode the PNGs differently (ImageIO), so the tests compare decoded pixels, not bytes. It is Swift (`Sources/RaccoonRig`, run through `RenderArtwork raccoon`), with no extra dependencies. `Package.swift` compiles `RaccoonRig` with `-O` even in debug builds (an `unsafeFlags` setting): unoptimized, its pixel loops made `swift test` slow enough to starve the timing-sensitive tests. `RaccoonArtTests` fail if the committed output is out of date, if the layers at rest differ from the sheet beyond removed specks, or if a still object or the shadow ends up in a moving layer.
 
 ## Layout
 

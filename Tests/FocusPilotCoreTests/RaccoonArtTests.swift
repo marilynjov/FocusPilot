@@ -16,7 +16,7 @@ struct RaccoonArtTests {
         return try! JSONDecoder().decode(RaccoonArtManifest.self, from: data)
     }()
 
-    static let sourcePoses: [String: RGBAImage] = RaccoonSheet.slice(try! PNGCoding.read(artwork.appending(path: "raccoon-sheet.png")))
+    static let sourcePoses: [String: RGBAImage] = try! RaccoonSheet.slice(PNGCoding.read(artwork.appending(path: "raccoon-sheet.png")))
 
     static func layers(_ pose: RaccoonPoseArt) throws -> [RaccoonLayer: RGBAImage] {
         let strip = try PNGCoding.read(packaged.appending(path: pose.image))
@@ -126,6 +126,50 @@ struct RaccoonArtTests {
         }
     }
 
+    /// Where each still object is, in frame pixels: its bounds must fall
+    /// inside `area` (x0, y0, x1, y1, end exclusive) and its size in `pixels`.
+    static let stillObjects: [String: (area: (Int, Int, Int, Int), pixels: ClosedRange<Int>)] = [
+        "laptop": ((100, 150, 240, 256), 8_000...10_500),
+        "sign": ((90, 120, 215, 256), 10_000...13_000),
+        "peek": ((168, 60, 180, 256), 600...1_000),  // the wall
+        "ledge": ((0, 210, 256, 256), 3_500...5_000),  // the ledge and paws
+    ]
+
+    /// Every pose stands on a floor shadow except Waiting, which hangs on its ledge.
+    @Test func stillObjectsAndShadowsAreWhereExpected() throws {
+        for pose in Self.manifest.poses {
+            let layers = try Self.layers(pose)
+
+            if let expected = Self.stillObjects[pose.id] {
+                let still = try #require(layers[.still], "\(pose.id) has no still layer")
+                let box = try #require(still.boundingBox())
+                let (x0, y0, x1, y1) = expected.area
+                #expect(box.x0 >= x0 && box.y0 >= y0 && box.x1 <= x1 && box.y1 <= y1, "\(pose.id): still object at \(box)")
+                #expect(expected.pixels.contains(opaqueCount(still)), "\(pose.id): still object has \(opaqueCount(still)) px")
+            } else {
+                #expect(layers[.still] == nil, "\(pose.id) should have no still layer")
+            }
+
+            if pose.id == "ledge" {
+                #expect(layers[.shadow] == nil)
+            } else {
+                let shadow = try #require(layers[.shadow], "\(pose.id) has no shadow")
+                let box = try #require(shadow.boundingBox())
+                #expect(box.y0 >= 228 && box.y1 <= 253, "\(pose.id): shadow at \(box)")
+                #expect((200...2_000).contains(opaqueCount(shadow)), "\(pose.id): shadow has \(opaqueCount(shadow)) px")
+            }
+
+            // No shadow-colored pixel is left in a moving layer below the feet line.
+            for (layer, image) in layers where layer.movesWithRaccoon {
+                for y in 228..<Self.manifest.frameSize {
+                    for x in 0..<Self.manifest.frameSize where isShadowColored(image[x, y]) {
+                        Issue.record("\(pose.id): shadow-colored pixel at \(x),\(y) in \(layer)")
+                    }
+                }
+            }
+        }
+    }
+
     /// The generator, run on the committed sheet, reproduces the committed
     /// output, and running it twice gives byte-identical files.
     @Test func generatorReproducesTheCommittedArt() throws {
@@ -150,6 +194,15 @@ struct RaccoonArtTests {
     }
 
     // MARK: - Helpers
+
+    private func opaqueCount(_ image: RGBAImage) -> Int {
+        stride(from: 3, to: image.bytes.count, by: 4).filter { image.bytes[$0] > 0 }.count
+    }
+
+    /// The floor shadow's light lavender: blue clearly above red and green.
+    private func isShadowColored(_ p: Pixel) -> Bool {
+        p.a > 30 && Int(p.b) >= Int(p.r) + 10 && Int(p.b) >= Int(p.g) + 6 && Int(p.r) + Int(p.g) + Int(p.b) > 390
+    }
 
     /// Pixel indices of the source's 8-connected pieces under 8 pixels.
     private func specks(in image: RGBAImage) -> Set<Int> {

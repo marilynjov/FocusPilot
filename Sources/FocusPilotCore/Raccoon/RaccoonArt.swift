@@ -113,8 +113,9 @@ public struct RaccoonPoseMotion: Codable, Equatable, Sendable {
     public var legs: [RaccoonMotionUse]?
     /// Opacity of the `eyesClosed` layer.
     public var blink: RaccoonMotionUse?
-    /// Raccoon layers are clipped to x < `clipMaxX`, so the Peek pose can
-    /// duck behind its wall.
+    /// Raccoon layers (everything but still objects, effects and the shadow)
+    /// are clipped to x < `clipMaxX`, in frame pixels before any motion, so
+    /// the Peek pose can duck behind its wall.
     public var clipMaxX: Double?
 
     public init(head: RaccoonMotionUse? = nil, body: RaccoonMotionUse? = nil, move: RaccoonMotionUse? = nil,

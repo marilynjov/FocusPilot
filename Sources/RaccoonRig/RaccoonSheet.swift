@@ -22,17 +22,25 @@ public enum RaccoonSheet {
     /// Sheet pixels with alpha at or below this are treated as empty when cropping.
     static let alphaThreshold: UInt8 = 40
 
+    static let sheetSize = (width: 1263, height: 1234)
+
     /// Each pose as a 256 × 256 image, keyed by pose identifier.
-    public static func slice(_ sheet: RGBAImage) -> [String: RGBAImage] {
+    public static func slice(_ sheet: RGBAImage) throws -> [String: RGBAImage] {
+        guard sheet.width == sheetSize.width && sheet.height == sheetSize.height else {
+            throw RaccoonArtBuilder.BuildError.unexpectedSheet(
+                "expected \(sheetSize.width) × \(sheetSize.height), found \(sheet.width) × \(sheet.height)")
+        }
         var crops: [RGBAImage] = []
         for (y0, y1) in rows {
             for (x0, x1) in columns {
                 let cell = sheet.cropped(x0: x0, y0: y0, x1: x1, y1: y1)
-                let box = cell.boundingBox(alphaAbove: alphaThreshold)!
+                guard let box = cell.boundingBox(alphaAbove: alphaThreshold) else {
+                    throw RaccoonArtBuilder.BuildError.unexpectedSheet("the cell for \(poseIDs[crops.count]) is empty")
+                }
                 crops.append(cell.cropped(x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1))
             }
         }
-        let largest = crops.map { max($0.width, $0.height) }.max()!
+        let largest = crops.reduce(1) { max($0, $1.width, $1.height) }
         let scale = Double(frameSize - 8) / Double(largest)
 
         var poses: [String: RGBAImage] = [:]

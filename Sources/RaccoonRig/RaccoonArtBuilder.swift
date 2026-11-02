@@ -28,10 +28,12 @@ public enum RaccoonArtBuilder {
 
     public enum BuildError: Error, CustomStringConvertible {
         case invalidDescriptions(String)
+        case unexpectedSheet(String)
 
         public var description: String {
             switch self {
             case .invalidDescriptions(let reason): "\(posesFileName): \(reason)"
+            case .unexpectedSheet(let reason): "\(sheetFileName): \(reason)"
             }
         }
     }
@@ -55,7 +57,7 @@ public enum RaccoonArtBuilder {
         guard ids == RaccoonSheet.poseIDs else {
             throw BuildError.invalidDescriptions("poses must be \(RaccoonSheet.poseIDs) in sheet order, found \(ids)")
         }
-        let poses = RaccoonSheet.slice(sheet)
+        let poses = try RaccoonSheet.slice(sheet)
         var strips: [String: Data] = [:]
         var art: [RaccoonPoseArt] = []
         for description in descriptions.poses {
@@ -72,9 +74,14 @@ public enum RaccoonArtBuilder {
         return Output(manifest: manifest, strips: strips, manifestData: try encode(manifest))
     }
 
-    /// Writes the strips and `raccoon.json` into `directory`, replacing older files.
+    /// Writes the strips and `raccoon.json` into `directory`. Strips already
+    /// there are removed first, so a renamed or dropped pose leaves no stale file.
     public static func write(_ output: Output, to directory: URL) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        for name in try files.contentsOfDirectory(atPath: directory.path) where name.hasSuffix(".png") {
+            try files.removeItem(at: directory.appending(path: name))
+        }
         for (name, data) in output.strips {
             try data.write(to: directory.appending(path: name))
         }
