@@ -34,6 +34,7 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - 2026-11-02: Defaults: a 10-minute break after every 90 minutes of focus inside a long task block, and a 5-minute buffer between task blocks.
 - 2026-11-02: A new install starts with the Colorful palette, following the Mac's light or dark appearance.
 - 2026-11-02: Agent monitoring is off by default for a new install.
+- 2026-11-02: Each task can have a focus set: the apps and sites it needs, a strictness, and optionally what to open when its block starts. Usual blocks: normal rules apply, and the task's apps and sites override only session-only rules; if one is blocked by an always-on or scheduled rule, the app says so and the owner changes that rule explicitly (ARCHITECTURE, enforcement ownership). Only these: during the task's focus blocks, other apps are hidden and, in Chrome, other sites are blocked. FocusPilot, Finder, system UI, menu-bar-only apps and the owner's Safari blocker are never hidden, Chrome stays allowed when the set lists sites, and hiding works only while FocusPilot runs (validate: hiding every app outside a set, and Chrome allow-only blocking with declarativeNetRequest, including sign-in redirects and resources from other domains; spike S3 tested a blocklist only). Open at start reuses `Resource.launchOrder` (decision 0003), taking over the launch-set part of upstream T10. Safari cannot enforce Only these until FocusPilot has its own Safari extension.
 
 ## Proposed
 
