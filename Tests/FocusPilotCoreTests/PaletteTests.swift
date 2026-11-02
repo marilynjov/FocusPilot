@@ -43,6 +43,36 @@ struct PaletteTests {
         }
     }
 
+    /// Block titles, times and the pin are drawn in the block's text color
+    /// on its background, while the block rests, is dragged or is held for
+    /// an overlap confirmation.
+    @Test(arguments: variants)
+    func blockTextMeetsFourPointFiveToOneOnEveryBlockColor(colors: PaletteColors) {
+        for pair in BlockColors.all {
+            let ratio = colors[pair.text].contrast(with: colors[pair.background])
+            #expect(ratio >= PaletteContrast.textMinimum,
+                    "\(name(colors)): block text \(pair.text) \(colors[pair.text]) on \(pair.background) \(colors[pair.background]) is \(ratio):1")
+        }
+    }
+
+    @Test func blockColorsFollowTheOrderOfTasksInThePlanAndCycle() {
+        func block(_ kind: DayBlock.Kind, _ hour: Int, task: Int64? = nil) -> DayBlock {
+            DayBlock(id: Int64(hour), kind: kind, start: ClockTime(hour, 0), end: ClockTime(hour, 45), taskID: task)
+        }
+        let blocks = [
+            block(.task, 8, task: 30), block(.task, 9, task: 10), block(.break, 10), block(.task, 11, task: 30),
+            block(.lunch, 12), block(.task, 13, task: 20), block(.task, 14, task: 40), block(.task, 15),
+            block(.wrapUp, 16),
+        ]
+        let plan = DayPlan(date: LocalDate(year: 2026, month: 11, day: 2),
+                           workingHours: TimeSpan(ClockTime(8, 0), ClockTime(17, 0)), blocks: blocks)
+
+        #expect(blocks.map { plan.colors(of: $0).background } ==
+                [.t1bg, .t2bg, .breakbg, .t1bg, .lunchbg, .t3bg, .t1bg, .t2bg, .breakbg])
+        #expect(blocks.map { plan.colors(of: $0).text } ==
+                [.t1fg, .t2fg, .breakfg, .t1fg, .lunchfg, .t3fg, .t1fg, .t2fg, .breakfg])
+    }
+
     @Test(arguments: Palette.allCases)
     func increasedContrastIsStrongerForTextAndSeparators(palette: Palette) {
         for appearance in [Appearance.light, .dark] {

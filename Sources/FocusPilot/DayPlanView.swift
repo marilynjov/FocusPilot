@@ -13,11 +13,12 @@ struct DayPlanView: View {
     @State private var editing: BlockEditorSheet.Draft?
     /// A dragged block waiting for the owner to confirm its overlap.
     @State private var confirming: PendingOverlap?
+    @Environment(\.palette) private var palette
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
+            Rectangle().fill(palette.color(.line)).frame(height: 1)
             if let plan = model.dayPlan {
                 ScrollView {
                     // Each edit names the day it was made on (see AppModel+DayPlan).
@@ -75,7 +76,7 @@ struct DayPlanView: View {
                 if let plan = model.dayPlan {
                     PlanStateBadge(state: plan.state)
                     Text("Working hours \(DayPlanText.times(plan.workingHours))")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.color(.muted))
                 }
                 Spacer()
                 Button("Add Block", systemImage: "plus") {
@@ -85,14 +86,14 @@ struct DayPlanView: View {
                 Button("Approve Plan", systemImage: "checkmark") {
                     if let date = model.dayPlan?.date { Task { await model.approveDayPlan(on: date) } }
                 }
-                    .buttonStyle(.borderedProminent)
+                    .accentProminentButton()
                     .disabled(model.dayPlan?.state != .draft)
                     .help("Approving marks this plan as the one you’ll follow today.")
             }
             if model.dayPlan?.state == .approved {
                 Text("Approved. Changing a block makes the plan a draft again. Approved plans don’t start focus sessions yet.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.color(.muted))
             }
             SettingsError(message: model.dayPlanError)
         }
@@ -111,15 +112,23 @@ struct PendingOverlap {
 
 struct PlanStateBadge: View {
     let state: DayPlan.State
+    @Environment(\.palette) private var palette
 
     var body: some View {
-        Label(state == .approved ? "Approved" : "Draft",
-              systemImage: state == .approved ? "checkmark.seal.fill" : "pencil")
+        // The label in a text color; only the Approved seal takes the
+        // Ready status color, held to 3:1 as a mark.
+        Label {
+            Text(state == .approved ? "Approved" : "Draft")
+        } icon: {
+            Image(systemName: state == .approved ? "checkmark.seal.fill" : "pencil")
+                .foregroundStyle(palette.color(state == .approved ? .ready : .muted))
+        }
             .font(.callout.weight(.medium))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .foregroundStyle(state == .approved ? Color.green : Color.secondary)
-            .background(.quaternary, in: Capsule())
+            .foregroundStyle(palette.color(state == .approved ? .ink : .muted))
+            .background(palette.color(.surface), in: Capsule())
+            .overlay(Capsule().stroke(palette.color(.line)))
     }
 }
 
@@ -135,6 +144,7 @@ private struct DayTimeline: View {
     static let pointsPerMinute: CGFloat = 1.2
     static let snapMinutes = 15
     private let labelWidth: CGFloat = 64
+    @Environment(\.palette) private var palette
 
     /// Whole hours around the working hours.
     private var gridStart: Int { plan.workingHours.start.minutes / 60 * 60 }
@@ -150,18 +160,18 @@ private struct DayTimeline: View {
                 HStack(alignment: .center, spacing: 8) {
                     Text(DayPlanText.time(minutesAfterMidnight: minutes))
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.color(.muted))
                         .frame(width: labelWidth, alignment: .trailing)
-                    Rectangle().fill(.separator).frame(height: 1)
+                    Rectangle().fill(palette.color(.line)).frame(height: 1)
                 }
                 .frame(height: 12)
                 .offset(y: y(minutes) - 6)
             }
             // Outside working hours is shaded.
-            Rectangle().fill(.quaternary.opacity(0.5))
+            Rectangle().fill(palette.color(.chrome))
                 .frame(height: y(plan.workingHours.start.minutes))
                 .padding(.leading, labelWidth + 8)
-            Rectangle().fill(.quaternary.opacity(0.5))
+            Rectangle().fill(palette.color(.chrome))
                 .frame(height: max(0, y(gridEnd) - y(plan.workingHours.end.minutes)))
                 .padding(.leading, labelWidth + 8)
                 .offset(y: y(plan.workingHours.end.minutes))
@@ -193,6 +203,7 @@ private struct TimelineBlock: View {
     /// Where the block was dropped, shown until the save answers, so it
     /// does not jump back and forth.
     @State private var saving: DayBlock?
+    @Environment(\.palette) private var palette
 
     private static func snapped(_ translation: CGFloat) -> Int {
         let step = DayTimeline.snapMinutes
@@ -220,11 +231,17 @@ private struct TimelineBlock: View {
     var body: some View {
         let shown = shown
         let height = max(CGFloat(shown.span.minutes) * DayTimeline.pointsPerMinute, 18)
+        let colors = plan.colors(of: block)
+        // Opaque, in the block's palette pair, so its text keeps 4.5:1 while
+        // it rests, is dragged over other blocks or waits for confirmation.
         label(shown)
+            .foregroundStyle(palette.color(colors.text))
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(color.opacity(block.isFixed ? 0.12 : 0.22), in: RoundedRectangle(cornerRadius: 6))
+            .background(palette.color(colors.background), in: RoundedRectangle(cornerRadius: 6))
+            // Keeps touching blocks of the same color apart.
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(palette.color(.line), lineWidth: 1))
             .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3).padding(.vertical, 3)
+                RoundedRectangle(cornerRadius: 2).fill(palette.color(colors.text)).frame(width: 3).padding(.vertical, 3)
             }
             .overlay(alignment: .bottom) { resizeHandle }
             .contentShape(RoundedRectangle(cornerRadius: 6))
@@ -238,6 +255,8 @@ private struct TimelineBlock: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(DayPlanText.name(block, in: plan))
             .accessibilityAction(named: "Edit") { edit(block) }
+            // A moved block is drawn above the blocks it passes over.
+            .zIndex(shown == block ? 0 : 1)
     }
 
     private func label(_ shown: DayBlock) -> some View {
@@ -248,7 +267,7 @@ private struct TimelineBlock: View {
             }
             Text(plan.title(of: block)).fontWeight(.medium).lineLimit(1)
             Spacer(minLength: 4)
-            Text(DayPlanText.times(shown.span)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text(DayPlanText.times(shown.span)).font(.caption.monospacedDigit())
         }
         .font(.callout)
         .padding(.horizontal, 10)
@@ -290,15 +309,6 @@ private struct TimelineBlock: View {
         Task {
             await save(moved)
             saving = nil
-        }
-    }
-
-    private var color: Color {
-        switch block.kind {
-        case .task: .accentColor
-        case .break: .green
-        case .lunch: .orange
-        case .wrapUp: .purple
         }
     }
 }
