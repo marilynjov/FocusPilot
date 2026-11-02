@@ -22,6 +22,15 @@ extension FocusCoordinator {
         return edit
     }
 
+    /// Captures a new task and places its block in one step (#29). Following
+    /// the plan afterwards broadcasts, so subscribers hear of the new task.
+    public func addBlock(_ block: DayBlock, forNew newTask: NewTask, to date: LocalDate,
+                         confirmed: Bool = false) async throws -> DayPlanEdit {
+        let edit = try await repository.addBlock(block, forNew: newTask, to: date, confirmed: confirmed)
+        await followPlanAfterAction()
+        return edit
+    }
+
     public func updateBlock(_ block: DayBlock, in date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         let edit = try await repository.updateBlock(block, in: date, confirmed: confirmed)
         await followPlanAfterAction()
