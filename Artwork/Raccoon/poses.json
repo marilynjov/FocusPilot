@@ -27,7 +27,7 @@
      "motion": {"head": {"motion": "tiltTiny", "duration": 7.6}, "effects": {"motion": "dots", "duration": 1.6},
                 "blink": {"motion": "blink", "duration": 4.6, "offset": 1.7}}},
     {"id": "sniff", "name": "Impatient", "caption": "Hurry up…",
-     "motion": {"head": {"motion": "nod", "duration": 7.1}, "body": {"motion": "breathe", "duration": 3.5},
+     "motion": {"head": {"motion": "nod", "duration": 0.5}, "body": {"motion": "breathe", "duration": 3.5},
                 "effects": {"motion": "twinkle", "duration": 1.2}, "blink": {"motion": "blink", "duration": 4.1, "offset": 1.5}}},
     {"id": "coffee", "name": "Coffee time", "caption": "You’re getting things done",
      "motion": {"head": {"motion": "tiltLeft", "duration": 7.6}, "body": {"motion": "breathe", "duration": 4.0},
