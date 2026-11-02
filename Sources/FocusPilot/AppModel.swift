@@ -41,17 +41,29 @@ final class AppModel {
     var ruleEditToConfirm: RuleEdit?
     /// Asks the planning window to show a page, e.g. Settings from ⌘,.
     var requestedPage: PlanningView.Page?
-    /// Whether the planning window is open.
+    /// Whether the planning window is open (shown, not closed).
     var isPlanningWindowOpen = false {
-        didSet { raccoon.update() }
+        didSet { refreshRaccoonWindowState() }
     }
-    /// Whether FocusPilot is the frontmost app.
-    var isAppActive = false {
-        didSet { raccoon.update() }
+    /// Whether FocusPilot is in front and its planning window is not
+    /// minimized; see `refreshRaccoonWindowState`.
+    private(set) var isPlanningWindowInFront = false {
+        didSet { if isPlanningWindowInFront != oldValue { raccoon.update() } }
     }
+    /// The reminder the raccoon is peeking in with (D12), if any.
+    var raccoonPeek: RaccoonPeek?
     /// The raccoon shows in the planning window while the owner is looking
     /// at it, and on screen otherwise (owner request, 2026-11-02).
-    var raccoonIsInWindow: Bool { isPlanningWindowOpen && isAppActive }
+    var raccoonIsInWindow: Bool { isPlanningWindowOpen && isPlanningWindowInFront }
+
+    /// Reads the app and window state directly, so a missed notification
+    /// cannot leave it stale.
+    func refreshRaccoonWindowState() {
+        let app = NSApplication.shared
+        isPlanningWindowInFront = app.isActive
+            && app.windows.contains { $0.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true && $0.isVisible && !$0.isMiniaturized }
+        raccoon.update()
+    }
     /// Why the last exception request was refused.
     var exceptionError: String?
     /// The wrap-up waiting for the owner; see `AppModel+WrapUp.swift`.
@@ -119,7 +131,7 @@ final class AppModel {
         displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
         displayPreferences.raccoonModeDidChange = { [weak self] _ in self?.raccoon.update() }
         displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
-        raccoon.update()
+        refreshRaccoonWindowState()
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
         refreshLoginItem(on: NSApplication.didBecomeActiveNotification)
         tickWhileTimeIsShown()
