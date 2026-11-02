@@ -48,7 +48,7 @@ With `FOCUSPILOT_DATA_DIR` set, the app does not touch your Chrome's host regist
 
 ## Artwork
 
-The app icon and the menu bar glyphs are drawn from the logo geometry in code (`Sources/FocusPilotCore/AppIcon` and `Sources/FocusPilotCore/MenuBar`); there are no hand-drawn image files. `build-app.sh` writes `build/artwork/AppIcon.icon` (an Icon Composer file) and compiles it into the bundle.
+The app icon and the menu bar glyphs are drawn from the logo geometry in code (`Sources/FocusPilotCore/AppIcon` and `Sources/FocusPilotCore/MenuBar`); they have no hand-drawn image files. `build-app.sh` writes `build/artwork/AppIcon.icon` (an Icon Composer file) and compiles it into the bundle.
 
 To review the artwork without launching the app:
 
@@ -58,6 +58,18 @@ To review the artwork without launching the app:
 
 This writes the four menu bar glyphs in light and dark (with and without the time label) and the app icon at 1024, 128, 32 and 16 px, rendered by Icon Composer's `ictool`.
 
+### Raccoon companion art
+
+The raccoon's poses come from the owner's pose sheet, `Artwork/Raccoon/raccoon-sheet.png` (20 poses, decision 0004). `Artwork/Raccoon/poses.json` holds what the sheet does not: each pose's name and caption, the walking pose's leg pivots, and the motion from the approved mockup (head tilt, breathing, blinking, leg swing, effect timings).
+
+The generator cuts every pose into a horizontal strip of 256 × 256 layers (body, head, closed-eyes head, still objects, floating effects, floor shadow, and four legs for Walking) and writes `Packaging/Raccoon/<pose>.png` plus `Packaging/Raccoon/raccoon.json` (layers present, head pivot, motion). The output is committed and `build-app.sh` copies it into `Contents/Resources/Raccoon`, so building the app does not run the generator. After changing the sheet, `poses.json` or the generator, rebuild and commit the output:
+
+```sh
+./scripts/build-raccoon-art.sh /tmp/raccoon-contact-sheet.png
+```
+
+The optional path also renders a contact sheet: every pose at rest and, next to it, with the head tilted, eyes closed and legs swung, to check for seams. The generator is deterministic: the same inputs give byte-identical files. It is Swift (`Sources/RaccoonRig`, run through `RenderArtwork raccoon`), with no extra dependencies. `RaccoonArtTests` fail if the committed output is out of date, if the layers at rest differ from the sheet beyond removed specks, or if a still object or the shadow ends up in a moving layer.
+
 ## Layout
 
 | Path | Contents |
@@ -65,7 +77,10 @@ This writes the four menu bar glyphs in light and dark (with and without the tim
 | `Sources/FocusPilotCore` | Testable logic: storage, coordinator, tasks and deadlines, login item, menu bar state, artwork geometry |
 | `Sources/FocusPilot` | The SwiftUI app: menu bar item, planning window, settings |
 | `Sources/FocusPilotCLI` | The `focuspilot` command; all its logic is `FocusPilotCommand` in core |
-| `Sources/RenderArtwork` | Build-time tool that writes `AppIcon.icon` and review images |
+| `Sources/RenderArtwork` | Build-time tool that writes `AppIcon.icon`, review images and the raccoon art |
+| `Sources/RaccoonRig` | Developer-only code that cuts the raccoon sheet into layers; not linked into the app |
+| `Artwork/Raccoon` | Raccoon pose sheet and pose descriptions (generator input) |
+| `Packaging/Raccoon` | Generated raccoon layer strips and `raccoon.json`, bundled by `build-app.sh` |
 | `Tests/FocusPilotCoreTests` | Swift Testing suites for `FocusPilotCore` |
 | `Packaging/Info.plist` | Bundle metadata, including `LSUIElement` |
 

@@ -26,11 +26,21 @@ let package = Package(
             name: "FocusPilot",
             dependencies: ["FocusPilotCore"]
         ),
+        // Developer tool code: cuts the raccoon pose sheet into layer strips
+        // (scripts/build-raccoon-art.sh). The app bundles the committed
+        // output and does not link this.
+        .target(
+            name: "RaccoonRig",
+            dependencies: ["FocusPilotCore"],
+            // Pixel loops are about 50 times slower unoptimized; this keeps
+            // RaccoonArtTests from slowing the timing-sensitive suites.
+            swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
+        ),
         // Build-time tool: writes AppIcon.icon for scripts/build-app.sh and
         // renders review images. Not part of the app.
         .executableTarget(
             name: "RenderArtwork",
-            dependencies: ["FocusPilotCore"]
+            dependencies: ["FocusPilotCore", "RaccoonRig"]
         ),
         // The focuspilot command for Herdr panes. It talks to the running
         // app over a socket and never opens the databases itself.
@@ -47,7 +57,7 @@ let package = Package(
         .testTarget(
             name: "FocusPilotCoreTests",
             // The Chrome host is built so a test can run it as Chrome does.
-            dependencies: ["FocusPilotCore", "FocusPilotChromeHost", .product(name: "GRDB", package: "GRDB.swift")]
+            dependencies: ["FocusPilotCore", "FocusPilotChromeHost", "RaccoonRig", .product(name: "GRDB", package: "GRDB.swift")]
         ),
     ]
 )
