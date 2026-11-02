@@ -24,6 +24,12 @@ struct GeneralSettings: View {
             Section("Sessions") {
                 Toggle("Show the focus panel during sessions", isOn: $preferences.showsFocusPanel)
                     .onChange(of: preferences.showsFocusPanel) { model.focusPanel.update() }
+                    .disabled(display.raccoonMode == .staysOnScreen)
+                if display.raccoonMode == .staysOnScreen {
+                    Text("The raccoon stands in for the focus panel: click it to open the panel.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
             Section("Raccoon companion") {
                 Picker("Raccoon", selection: $display.raccoonMode) {
@@ -37,7 +43,7 @@ struct GeneralSettings: View {
                         }
                     }
                 }
-                Text("While a task is under way, the raccoon is in the corner of this window: working, sitting while paused, or with coffee on a break. When you switch to another app, it moves to the bottom-right corner of the screen this window is on, above other windows, and clicks go through it. With this window closed, it uses the screen you choose here. With Reduce Motion on, it stays still.")
+                Text("While a task is under way, the raccoon is in the corner of this window: working, sitting while paused, or with coffee on a break. When you switch to another app, it moves to the bottom-right corner of the screen this window is on, above other windows. With this window closed, it uses the screen you choose here. On screen it replaces the focus panel: point at it to see the time left, and click it to open the panel. With Reduce Motion on, it stays still.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
