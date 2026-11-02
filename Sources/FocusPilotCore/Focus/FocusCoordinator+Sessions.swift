@@ -14,6 +14,8 @@ extension FocusCoordinator {
             try await publish(repository.republish())
         }
         try await launchQuickTimer()
+        // Catches up on a block in progress; one already over never starts.
+        try await followPlan()
     }
 
     /// Starts a session on the pinned Now task.
@@ -28,6 +30,7 @@ extension FocusCoordinator {
 
     public func resume() async throws {
         try await handle(.resume)
+        try await followPlan()
     }
 
     /// Applies any deadline the clock has passed. Called at `nextDeadline`,
@@ -35,12 +38,14 @@ extension FocusCoordinator {
     public func reconcile() async throws {
         try await handle(.reconcile)
         try await repository.forgetEndedExceptions()
+        try await followPlan()
     }
 
     /// Completes the session. A strict session ending before its planned end
     /// first needs the owner's confirmation, then waits `StrictEarlyEnd.wait`
     /// from that confirmation on the monotonic clock; until then it keeps
-    /// running.
+    /// running. Completing a plan block's session before the block ends is
+    /// "Done early": the block is recorded as ended then (D3).
     public func complete(confirmed: Bool = false) async throws -> SessionCompletion {
         if let active = session, !active.hasEnded, active.mode == .strict, now() < active.plannedEnd {
             if earlyEnd?.request != active.id {
@@ -50,7 +55,12 @@ extension FocusCoordinator {
             }
             if let availableAt = earlyEndAvailableAt(), now() < availableAt { return .waitUntil(availableAt) }
         }
-        try await handle(.complete)
+        var planChange: PlanRunChange?
+        if let active = session, !active.hasEnded, planRun?.sessionID == active.id, now() < active.plannedEnd {
+            planChange = .endedEarly(sessionID: active.id, at: now())
+        }
+        try await handle(.complete, planChange: planChange)
+        try await followPlan()
         return .completed
     }
 
@@ -71,16 +81,17 @@ extension FocusCoordinator {
         await broadcast()
     }
 
-    /// One engine step: record the session and revisions in one write, then
-    /// publish the wrapped policies and deliver notices.
-    private func handle(_ event: FocusEvent) async throws {
+    /// One engine step: record the session, revisions and any plan block
+    /// change in one write, then publish the wrapped policies and deliver notices.
+    func handle(_ event: FocusEvent, planChange: PlanRunChange? = nil) async throws {
         let at = now()
         let transition = try FocusEngine.handle(event, session: session, at: at)
         // Starting a strict session cancels exceptions granted before it,
         // for apps and sites (decision 0003, 2026-10-22).
         var cancelsExceptions = false
         if case .start(let request) = event, request.mode == .strict { cancelsExceptions = true }
-        let recorded = try await repository.record(transition, cancellingExceptionsAt: cancelsExceptions ? at : nil)
+        let recorded = try await repository.record(transition, cancellingExceptionsAt: cancelsExceptions ? at : nil,
+                                                   planChange: planChange)
         var revisions = recorded.revisions.makeIterator()
         session = transition.session
         if session?.hasEnded != false {

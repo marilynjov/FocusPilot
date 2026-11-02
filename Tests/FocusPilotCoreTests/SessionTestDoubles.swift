@@ -61,7 +61,7 @@ struct SessionFixture {
         let now: @Sendable () -> Date = { clock.now }
         return FocusCoordinator(repository: try TaskRepository(location: location, now: now),
                                 publisher: publisher, notices: notices, now: now,
-                                uptime: { uptime.now })
+                                uptime: { uptime.now }, timeZone: { bogota })
     }
 }
 

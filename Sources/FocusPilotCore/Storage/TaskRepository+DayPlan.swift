@@ -86,7 +86,7 @@ extension TaskRepository {
     }
 
     /// Marks the plan approved, unless `DayPlanRules` finds a problem in it.
-    /// Approving does not start anything yet; following a plan is D3.
+    /// The coordinator then follows it (D3, `PlanSessions`).
     public func approveDayPlan(for date: LocalDate) async throws -> DayPlan {
         let approvedAt = now()
         return try await ownerDatabase.write { db in
@@ -143,7 +143,7 @@ extension TaskRepository {
         try DayPreferencesRow.fetchOne(db, key: 1)?.preferences() ?? .standard
     }
 
-    private static func dayPlan(_ date: LocalDate, _ db: Database) throws -> DayPlan? {
+    static func dayPlan(_ date: LocalDate, _ db: Database) throws -> DayPlan? {
         guard let row = try DayPlanRow.fetchOne(db, key: date.isoString) else { return nil }
         let blocks = try DayBlockRow.filter(Column("planDate") == date.isoString)
             .order(Column("startTime"), Column("id")).fetchAll(db).map { try $0.block() }

@@ -8,6 +8,10 @@ import SwiftUI
 /// confirmation, then waits `StrictEarlyEnd.wait` with a countdown; the
 /// session keeps running until the owner completes. The coordinator decides
 /// when confirmation is needed, so the Task menu asks too.
+///
+/// A session started by a plan block (D3) offers "Done early", which ends
+/// the block and the session, and "I need more time", which is recorded
+/// for replanning (D10) while the block keeps its end.
 struct SessionControls: View {
     let model: AppModel
     /// Off where the return cue is already on screen, as in the Now card.
@@ -28,13 +32,34 @@ struct SessionControls: View {
                     HStack(spacing: 8) {
                         pauseButton(session)
                         Button { Task { await model.complete() } } label: {
-                            Label("Complete", systemImage: "checkmark.circle").frame(maxWidth: .infinity)
+                            Label(planRun == nil ? "Complete" : "Done early", systemImage: "checkmark.circle")
+                                .frame(maxWidth: .infinity)
                         }
                         .accentProminentButton()
                     }
                     .controlSize(.large)
+                    if let planRun {
+                        moreTime(planRun)
+                    }
                 }
             }
+        }
+    }
+
+    private var planRun: PlanRun? {
+        model.snapshot.activePlanRun
+    }
+
+    @ViewBuilder
+    private func moreTime(_ run: PlanRun) -> some View {
+        if run.moreTimeRequestedAt == nil {
+            Button { Task { await model.requestMoreTime() } } label: { wide("I need more time") }
+                .help("Notes that this block needs more time. The block still ends on time for now.")
+        } else {
+            Label("More time noted. This block still ends on time; changing the plan for it comes later.",
+                  systemImage: "clock.badge.checkmark")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 

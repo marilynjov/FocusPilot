@@ -25,6 +25,8 @@ public struct SessionPolicy: Equatable, Sendable {
 public enum FocusNotice: Equatable, Sendable {
     case sessionReachedPlannedEnd
     case breakEnded
+    /// A block of the approved plan started a session that ends at `end`.
+    case planBlockStarted(title: String, end: Date)
     /// A new exception granted from Chrome's blocked page (not one already
     /// covered), so a grant the owner did not ask for does not go unnoticed.
     case exceptionGrantedFromChrome(ExceptionScope, until: Date)

@@ -91,6 +91,11 @@ extension AppModel {
         return isConfirmingEarlyEnd
     }
 
+    /// "I need more time" on a plan block's session: recorded only (D3).
+    func requestMoreTime() async {
+        await run { try await $0.requestMoreTime() }
+    }
+
     func cancelEarlyEnd() async {
         isConfirmingEarlyEnd = false
         await coordinator?.cancelEarlyEnd()

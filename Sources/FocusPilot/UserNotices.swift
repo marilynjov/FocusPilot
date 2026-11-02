@@ -19,6 +19,9 @@ struct UserNotices: FocusNoticeSink {
         case .breakEnded:
             content.title = "Break is over"
             content.body = "Back to your focus session."
+        case .planBlockStarted(let title, let end):
+            content.title = "Focus started: \(title)"
+            content.body = "From your plan. \(SessionText.endsAt(end, from: .now, timeZone: .current))."
         case .exceptionGrantedFromChrome(let scope, let until):
             let text = ExceptionNoticeText.grantedFromChrome(scope, until: until)
             content.title = text.title
