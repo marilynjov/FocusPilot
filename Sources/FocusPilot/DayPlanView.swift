@@ -238,6 +238,8 @@ private struct TimelineBlock: View {
             .foregroundStyle(palette.color(colors.text))
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
             .background(palette.color(colors.background), in: RoundedRectangle(cornerRadius: 6))
+            // Keeps touching blocks of the same color apart.
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(palette.color(.line), lineWidth: 1))
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2).fill(palette.color(colors.text)).frame(width: 3).padding(.vertical, 3)
             }
