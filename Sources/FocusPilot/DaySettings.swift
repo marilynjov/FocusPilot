@@ -8,9 +8,14 @@ struct DaySettings: View {
     let model: AppModel
     @State private var draft = DayPreferences.standard
     @State private var isLoaded = false
+    /// The latest save; each one waits for the one before.
+    @State private var saving: Task<Void, Never>?
 
     var body: some View {
         Form {
+            if let error = model.dayPreferencesError {
+                Section { SettingsError(message: error) }
+            }
             Section("Working hours") {
                 DatePicker("Start", selection: time($draft.workingHours.start), displayedComponents: .hourAndMinute)
                 DatePicker("End", selection: time($draft.workingHours.end), displayedComponents: .hourAndMinute)
@@ -37,12 +42,9 @@ struct DaySettings: View {
             } header: {
                 Text("Fixed every day")
             } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    SettingsError(message: model.dayPreferencesError)
-                    Text("New days start with these hours and blocks. Today’s plan keeps the ones it started with.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("New days start with these hours and blocks. Today’s plan keeps the ones it started with; to skip or move lunch just for today, change it on Today’s plan.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -51,10 +53,24 @@ struct DaySettings: View {
             draft = model.dayPreferences
             isLoaded = true
         }
-        .onChange(of: draft) {
-            guard isLoaded, draft != model.dayPreferences else { return }
-            let preferences = draft
-            Task { await model.saveDayPreferences(preferences) }
+        .onChange(of: draft) { save(draft) }
+    }
+
+    /// Saves a valid draft after any save still running, so saves land in
+    /// the order they were made and the last one wins. An invalid draft is
+    /// kept on screen, not saved, with the reason above the list.
+    private func save(_ preferences: DayPreferences) {
+        guard isLoaded else { return }
+        if let problem = preferences.problem {
+            model.dayPreferencesError = "Not saved: \(DayPlanText.message(problem))"
+            return
+        }
+        model.dayPreferencesError = nil
+        guard preferences != model.dayPreferences else { return }
+        let previous = saving
+        saving = Task {
+            await previous?.value
+            await model.saveDayPreferences(preferences)
         }
     }
 

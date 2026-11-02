@@ -66,7 +66,6 @@ final class AppModel {
     /// Today's plan and the day preferences (D1); see `AppModel+DayPlan.swift`.
     var dayPlan: DayPlan?
     var dayPlanError: String?
-    var blockEditToConfirm: BlockEditToConfirm?
     var dayPreferences = DayPreferences.standard
     var dayPreferencesError: String?
     /// Pending reconcile at the next session deadline.
