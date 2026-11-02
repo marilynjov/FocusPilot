@@ -20,8 +20,10 @@ struct DayPlanView: View {
             Divider()
             if let plan = model.dayPlan {
                 ScrollView {
-                    DayTimeline(plan: plan, held: confirming?.block, edit: { editing = .init($0) },
-                                save: { await save($0) }, delete: { id in Task { await model.deleteBlock(id) } })
+                    // Each edit names the day it was made on (see AppModel+DayPlan).
+                    DayTimeline(plan: plan, held: confirming?.block, edit: { editing = .init($0, on: plan.date) },
+                                save: { await save($0, on: plan.date) },
+                                delete: { id in Task { await model.deleteBlock(id, on: plan.date) } })
                         .padding(20)
                 }
             } else {
@@ -45,7 +47,7 @@ struct DayPlanView: View {
             Button("Place It Anyway") {
                 guard let pending = confirming else { return }
                 Task {
-                    _ = await model.updateBlock(pending.block, confirmed: true)
+                    _ = await model.updateBlock(pending.block, on: pending.date, confirmed: true)
                     confirming = nil
                 }
             }
@@ -55,9 +57,9 @@ struct DayPlanView: View {
 
     /// Saves a dragged block; an overlap waits for confirmation, and the
     /// block stays where it was dropped meanwhile.
-    private func save(_ block: DayBlock) async {
-        if case .needsConfirmation(let overlapping) = await model.updateBlock(block) {
-            confirming = PendingOverlap(block: block, overlapping: overlapping)
+    private func save(_ block: DayBlock, on date: LocalDate) async {
+        if case .needsConfirmation(let overlapping) = await model.updateBlock(block, on: date) {
+            confirming = PendingOverlap(block: block, date: date, overlapping: overlapping)
         }
     }
 
@@ -80,7 +82,9 @@ struct DayPlanView: View {
                     if let plan = model.dayPlan { editing = .init(newIn: plan) }
                 }
                 .disabled(model.dayPlan == nil)
-                Button("Approve Plan", systemImage: "checkmark") { Task { await model.approveDayPlan() } }
+                Button("Approve Plan", systemImage: "checkmark") {
+                    if let date = model.dayPlan?.date { Task { await model.approveDayPlan(on: date) } }
+                }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.dayPlan?.state != .draft)
                     .help("Approving marks this plan as the one you’ll follow today.")
@@ -100,6 +104,8 @@ struct DayPlanView: View {
 /// A block edit held until the owner confirms its overlap.
 struct PendingOverlap {
     var block: DayBlock
+    /// The day of the plan it was dragged on.
+    var date: LocalDate
     var overlapping: [DayBlock]
 }
 

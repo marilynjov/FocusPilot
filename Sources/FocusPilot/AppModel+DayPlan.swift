@@ -13,8 +13,9 @@ enum BlockEditOutcome {
 /// Today's plan and the day preferences (D1). The coordinator checks and
 /// saves every edit; this keeps what the timeline and Settings show.
 ///
-/// Edits and approval go to the date of the plan on screen, never to
-/// "today" worked out again, so a page left open past midnight cannot change
+/// Edits and approval name the date of the plan on screen when the edit
+/// began (a sheet or confirmation captures it when it opens), never "today"
+/// worked out again, so a page left open past midnight cannot change
 /// or approve a day it does not show. The page reloads when the day changes.
 extension AppModel {
     /// The local date on this Mac's clock right now.
@@ -38,26 +39,26 @@ extension AppModel {
         if let shown = dayPlan?.date, shown != todayDate { await loadDayPlan() }
     }
 
-    func addBlock(_ block: DayBlock, confirmed: Bool = false) async -> BlockEditOutcome {
-        await blockEdit("Could not add the block") { coordinator, date in
+    func addBlock(_ block: DayBlock, on date: LocalDate, confirmed: Bool = false) async -> BlockEditOutcome {
+        await blockEdit("Could not add the block", on: date) { coordinator, date in
             try await coordinator.addBlock(block, to: date, confirmed: confirmed)
         }
     }
 
     /// A move, a resize, or a change of kind or task.
-    func updateBlock(_ block: DayBlock, confirmed: Bool = false) async -> BlockEditOutcome {
-        await blockEdit("Could not change the block") { coordinator, date in
+    func updateBlock(_ block: DayBlock, on date: LocalDate, confirmed: Bool = false) async -> BlockEditOutcome {
+        await blockEdit("Could not change the block", on: date) { coordinator, date in
             try await coordinator.updateBlock(block, in: date, confirmed: confirmed)
         }
     }
 
     /// Deleting a fixed block skips it on this day only.
-    func deleteBlock(_ id: Int64) async {
-        await planChange("Could not delete the block") { try await $0.deleteBlock(id, from: $1) }
+    func deleteBlock(_ id: Int64, on date: LocalDate) async {
+        await planChange("Could not delete the block", on: date) { try await $0.deleteBlock(id, from: $1) }
     }
 
-    func approveDayPlan() async {
-        await planChange("Could not approve the plan") { try await $0.approveDayPlan(for: $1) }
+    func approveDayPlan(on date: LocalDate) async {
+        await planChange("Could not approve the plan", on: date) { try await $0.approveDayPlan(for: $1) }
     }
 
     func loadDayPreferences() async {
@@ -83,10 +84,10 @@ extension AppModel {
         }
     }
 
-    private func blockEdit(_ failure: String,
+    private func blockEdit(_ failure: String, on date: LocalDate,
                            _ edit: (FocusCoordinator, LocalDate) async throws -> DayPlanEdit) async -> BlockEditOutcome {
         var outcome = BlockEditOutcome.failed
-        await planChange(failure) { coordinator, date in
+        await planChange(failure, on: date) { coordinator, date in
             switch try await edit(coordinator, date) {
             case .saved(let plan):
                 outcome = .saved
@@ -99,11 +100,14 @@ extension AppModel {
         return outcome
     }
 
-    /// Runs `change` on the plan on screen and shows the plan it returns.
-    private func planChange(_ failure: String, _ change: (FocusCoordinator, LocalDate) async throws -> DayPlan?) async {
-        guard let coordinator, let date = dayPlan?.date else { return }
+    /// Runs `change` on the plan for `date`, the day the owner was looking
+    /// at when the edit began, and shows the plan it returns unless the page
+    /// has moved on to another day meanwhile.
+    private func planChange(_ failure: String, on date: LocalDate,
+                            _ change: (FocusCoordinator, LocalDate) async throws -> DayPlan?) async {
+        guard let coordinator else { return }
         do {
-            if let plan = try await change(coordinator, date) { dayPlan = plan }
+            if let plan = try await change(coordinator, date), plan.date == dayPlan?.date { dayPlan = plan }
             dayPlanError = nil
         } catch let error as DayPlanError {
             dayPlanError = DayPlanText.message(error, in: dayPlan)

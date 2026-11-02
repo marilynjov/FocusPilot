@@ -10,6 +10,8 @@ struct DaySettings: View {
     @State private var isLoaded = false
     /// The latest save; each one waits for the one before.
     @State private var saving: Task<Void, Never>?
+    /// What the latest queued save writes; nil before the first.
+    @State private var queued: DayPreferences?
 
     var body: some View {
         Form {
@@ -66,7 +68,10 @@ struct DaySettings: View {
             return
         }
         model.dayPreferencesError = nil
-        guard preferences != model.dayPreferences else { return }
+        // Compared with the last save queued, not the last one finished: going
+        // A → B → A while B is still saving must queue A again, or B would win.
+        guard preferences != (queued ?? model.dayPreferences) else { return }
+        queued = preferences
         let previous = saving
         saving = Task {
             await previous?.value

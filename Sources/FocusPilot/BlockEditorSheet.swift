@@ -9,9 +9,13 @@ struct BlockEditorSheet: View {
     struct Draft: Identifiable {
         let id = UUID()
         var block: DayBlock
+        /// The day of the plan the sheet was opened on; the save goes there
+        /// even if the page moves on to a new day meanwhile.
+        var date: LocalDate
 
-        init(_ block: DayBlock) {
+        init(_ block: DayBlock, on date: LocalDate) {
             self.block = block
+            self.date = date
         }
 
         /// A new hour-long task block in the first free half-hour slot, or
@@ -23,13 +27,15 @@ struct BlockEditorSheet: View {
             }
             let free = slots.first { DayPlanRules.check($0, among: plan.blocks, workingHours: hours) == .fits }
             self.init(free ?? DayBlock(kind: .task, start: hours.start,
-                                       end: ClockTime(minutes: min(hours.start.minutes + 60, hours.end.minutes))))
+                                       end: ClockTime(minutes: min(hours.start.minutes + 60, hours.end.minutes))),
+                      on: plan.date)
         }
     }
 
     let model: AppModel
     @State private var block: DayBlock
     private let isNew: Bool
+    private let date: LocalDate
     @State private var isSaving = false
     /// Blocks the edit would overlap, while the owner is asked to confirm.
     @State private var overlapping: [DayBlock]?
@@ -39,6 +45,7 @@ struct BlockEditorSheet: View {
         self.model = model
         _block = State(initialValue: draft.block)
         isNew = draft.block.id == nil
+        date = draft.date
     }
 
     var body: some View {
@@ -69,7 +76,7 @@ struct BlockEditorSheet: View {
                 if !isNew, let id = block.id {
                     Button(block.isFixed ? "Skip Today" : "Delete", role: .destructive) {
                         Task {
-                            await model.deleteBlock(id)
+                            await model.deleteBlock(id, on: date)
                             if model.dayPlanError == nil { dismiss() }
                         }
                     }
@@ -99,8 +106,8 @@ struct BlockEditorSheet: View {
     private func save(confirmed: Bool) async {
         isSaving = true
         defer { isSaving = false }
-        let outcome = isNew ? await model.addBlock(block, confirmed: confirmed)
-            : await model.updateBlock(block, confirmed: confirmed)
+        let outcome = isNew ? await model.addBlock(block, on: date, confirmed: confirmed)
+            : await model.updateBlock(block, on: date, confirmed: confirmed)
         overlapping = nil
         switch outcome {
         case .saved: dismiss()
