@@ -24,13 +24,21 @@ public struct FocusSnapshot: Equatable, Sendable {
     public var pendingException: PendingException?
     /// The quick timer still running (D2), separate from any session.
     public var quickTimer: QuickTimer?
+    /// The plan block the active session runs, if it is one (D3).
+    public var planRun: PlanRun?
+    /// When the approved plan next starts a block or a break inside one.
+    public var planDeadline: Date?
+    /// Why the approved plan could not be followed just now, if it could not.
+    public var planFailure: String?
     /// Higher for later coordinator states; the app keeps the newest.
     public var revision: Int
 
     public init(currentTaskTitle: String? = nil, session: FocusSession? = nil, observeSince: Date? = nil,
                 earlyEndAvailableAt: Date? = nil, policy: CompiledPolicy? = nil,
                 pendingRuleEdit: PendingRuleEdit? = nil, pendingException: PendingException? = nil,
-                quickTimer: QuickTimer? = nil, revision: Int = 0) {
+                quickTimer: QuickTimer? = nil, planRun: PlanRun? = nil, planDeadline: Date? = nil,
+                planFailure: String? = nil,
+                revision: Int = 0) {
         self.currentTaskTitle = currentTaskTitle
         self.session = session
         self.observeSince = observeSince
@@ -39,6 +47,9 @@ public struct FocusSnapshot: Equatable, Sendable {
         self.pendingRuleEdit = pendingRuleEdit
         self.pendingException = pendingException
         self.quickTimer = quickTimer
+        self.planRun = planRun
+        self.planDeadline = planDeadline
+        self.planFailure = planFailure
         self.revision = revision
     }
 
@@ -56,11 +67,18 @@ public struct FocusSnapshot: Equatable, Sendable {
     }
 
     /// When the coordinator must next be asked to reconcile, such as the
-    /// planned end, the end of a break or an exception expiring. A quick
+    /// planned end, the end of a break, an exception expiring or the next
+    /// block of the approved plan. A quick
     /// timer has its own (`QuickTimer.nextDeadline`): reconciling it
     /// publishes no policy.
     public var nextDeadline: Date? {
-        ([activeSession?.nextDeadline] + (policy?.exceptions.map(\.expiresAt) ?? [])).compactMap { $0 }.min()
+        ([activeSession?.nextDeadline, planDeadline] + (policy?.exceptions.map(\.expiresAt) ?? [])).compactMap { $0 }.min()
+    }
+
+    /// The run of the active session's plan block, if it is one.
+    public var activePlanRun: PlanRun? {
+        guard let planRun, planRun.sessionID == activeSession?.id else { return nil }
+        return planRun
     }
 
     /// The state line shown inside the menu and the planning window.

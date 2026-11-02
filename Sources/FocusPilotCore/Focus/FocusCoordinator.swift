@@ -25,6 +25,8 @@ public actor FocusCoordinator {
     let now: @Sendable () -> Date
     /// A monotonic clock for waits, so changing the Mac's clock cannot skip them.
     let uptime: @Sendable () -> Duration
+    /// The Mac's time zone, which turns plan times into instants.
+    let timeZone: @Sendable () -> TimeZone
 
     /// The latest session, active or ended.
     var session: FocusSession?
@@ -45,6 +47,17 @@ public actor FocusCoordinator {
     var quickTimer: QuickTimer?
     /// The last queued read-and-record of Herdr's agents; see `oneAgentReadingAtATime`.
     var agentReading: Task<Void, Never>?
+    /// The engine step in progress. Steps await storage, and the actor lets
+    /// other calls in meanwhile; chaining them keeps an owner start and a
+    /// plan block start from both acting on the same old session.
+    var stepInProgress: Task<Void, Never>?
+    /// Why following the plan last failed after an action that succeeded;
+    /// nil once it works again.
+    var planFailure: String?
+    /// The run of the plan block whose session is active, if it is one.
+    var planRun: PlanRun?
+    /// When the approved plan next asks for a step (D3).
+    var planDeadline: Date?
     /// Grows with every change, so the app can drop a snapshot older than one it has.
     private var revision = 0
     private var subscribers: [UUID: AsyncStream<FocusSnapshot>.Continuation] = [:]
@@ -54,7 +67,8 @@ public actor FocusCoordinator {
                 agents: (any HerdrAgentSource)? = nil,
                 publisher: PolicyPublisher = PolicyNotDelivered(),
                 notices: FocusNoticeSink = NoticesIgnored(), now: @escaping @Sendable () -> Date = Date.init,
-                uptime: @escaping @Sendable () -> Duration = FocusCoordinator.continuousUptime()) {
+                uptime: @escaping @Sendable () -> Duration = FocusCoordinator.continuousUptime(),
+                timeZone: @escaping @Sendable () -> TimeZone = { .autoupdatingCurrent }) {
         self.repository = repository
         self.herdr = herdr
         self.agents = agents
@@ -62,6 +76,7 @@ public actor FocusCoordinator {
         self.notices = notices
         self.now = now
         self.uptime = uptime
+        self.timeZone = timeZone
     }
 
     /// Time on `ContinuousClock`, which keeps counting while the Mac sleeps.
@@ -74,7 +89,8 @@ public actor FocusCoordinator {
         FocusSnapshot(currentTaskTitle: try? await repository.nowTask()?.title, session: session,
                       observeSince: observeSince, earlyEndAvailableAt: earlyEndAvailableAt(), policy: policy,
                       pendingRuleEdit: pendingRuleEdit(), pendingException: pendingException(),
-                      quickTimer: quickTimer, revision: revision)
+                      quickTimer: quickTimer, planRun: planRun, planDeadline: planDeadline,
+                      planFailure: planFailure, revision: revision)
     }
 
     /// Every snapshot from now on, starting with the current one.

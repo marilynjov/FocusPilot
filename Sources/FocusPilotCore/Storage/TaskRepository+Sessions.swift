@@ -6,9 +6,11 @@ extension TaskRepository {
     /// changed, and a new policy revision for each publish, all in one
     /// write, with the rule inputs those policies are compiled from. With
     /// `cancellingExceptionsAt`, exceptions granted up to then are cancelled
-    /// in the same write (a strict session starting).
+    /// in the same write (a strict session starting). A plan block's
+    /// `planChange` goes in the same write too.
     @discardableResult
-    public func record(_ transition: FocusTransition, cancellingExceptionsAt cancel: Date? = nil) async throws -> RecordedTransition {
+    public func record(_ transition: FocusTransition, cancellingExceptionsAt cancel: Date? = nil,
+                       planChange: PlanRunChange? = nil) async throws -> RecordedTransition {
         let now = now()
         return try await ownerDatabase.write { db in
             if let cancel { try Self.cancelExceptions(grantedBy: cancel, db) }
@@ -16,6 +18,13 @@ extension TaskRepository {
             for effect in transition.effects {
                 switch effect {
                 case .persist(let session):
+                    // A new session never joins one still active: the
+                    // coordinator serializes steps, and this keeps two
+                    // starts from both being stored as running regardless.
+                    if try !SessionRow.exists(db, key: session.id.uuidString),
+                       let latest = try SessionRow.order(Column.rowID.desc).fetchOne(db)?.session(), !latest.hasEnded {
+                        throw FocusEngineError.sessionAlreadyActive
+                    }
                     try SessionRow(session).save(db)
                 case .publishPolicy:
                     revisions.append(try Self.nextPolicyRevision(db))
@@ -23,6 +32,7 @@ extension TaskRepository {
                     break
                 }
             }
+            if let planChange { try Self.apply(planChange, db) }
             return RecordedTransition(revisions: revisions, inputs: try Self.policyInputs(db, at: now))
         }
     }

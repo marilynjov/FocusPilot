@@ -27,9 +27,10 @@ public struct TimeSpan: Hashable, Sendable, Codable {
 /// One block of a day plan (decision 0004): a task, a break, lunch or the
 /// end-of-day wrap-up, between two wall-clock times of the plan's date.
 ///
-/// The times are never turned into instants here. When D3 runs blocks as
-/// sessions, that conversion must handle DST: a time in a spring-forward gap
-/// does not exist that day, and one in an autumn overlap happens twice.
+/// The times are never turned into instants here. `PlanSessions.instant`
+/// does that when blocks run as sessions (D3), handling DST: a time in a
+/// spring-forward gap does not exist that day, and one in an autumn overlap
+/// happens twice.
 public struct DayBlock: Hashable, Sendable, Identifiable {
     public enum Kind: String, CaseIterable, Codable, Sendable {
         case task, `break`, lunch, wrapUp

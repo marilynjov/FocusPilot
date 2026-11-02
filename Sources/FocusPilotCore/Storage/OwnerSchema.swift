@@ -297,6 +297,25 @@ enum OwnerSchema {
             // At most one running timer.
             try db.execute(sql: "CREATE UNIQUE INDEX quickTimer_one_running ON quickTimer(endedAt IS NULL) WHERE endedAt IS NULL")
         }
+        migrator.registerMigration("owner-v14-plan-sessions") { db in
+            // One row per task block that started a session (D3). A deleted
+            // block keeps its row as history with no block, so a new block
+            // reusing the ID still runs.
+            try db.create(table: PlanRunRow.databaseTableName) { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("blockId", .integer).unique()
+                    .references(DayBlockRow.databaseTableName, onDelete: .setNull)
+                table.column("planDate", .text).notNull()
+                table.column("taskId", .integer).references(TaskRecord.databaseTableName, onDelete: .setNull)
+                table.column("sessionId", .text).notNull().unique()
+                table.column("startedAt", .datetime).notNull()
+                table.column("endedEarlyAt", .datetime)
+                table.column("moreTimeRequestedAt", .datetime)
+                // JSON array of the IDs of breaks inside the block already started.
+                table.column("breaksStarted", .text).notNull().defaults(to: "[]")
+            }
+            try db.create(index: "planRun_on_planDate", on: PlanRunRow.databaseTableName, columns: ["planDate"])
+        }
         return migrator
     }
 

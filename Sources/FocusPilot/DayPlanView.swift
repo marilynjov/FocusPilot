@@ -88,14 +88,14 @@ struct DayPlanView: View {
                 }
                     .accentProminentButton()
                     .disabled(model.dayPlan?.state != .draft)
-                    .help("Approving marks this plan as the one you’ll follow today.")
+                    .help("Approving marks this plan as the one you’ll follow today: task blocks start focus sessions on time.")
             }
             if model.dayPlan?.state == .approved {
-                Text("Approved. Changing a block makes the plan a draft again. Approved plans don’t start focus sessions yet.")
+                Text("Approved. Each task block starts a focus session with your session rules when its time comes and ends with the block. Blocks without a task start nothing. Changing a block makes the plan a draft again, and drafts start nothing.")
                     .font(.callout)
                     .foregroundStyle(palette.color(.muted))
             }
-            SettingsError(message: model.dayPlanError)
+            SettingsError(message: model.dayPlanError ?? model.snapshot.planFailure)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
