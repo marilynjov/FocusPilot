@@ -2,17 +2,21 @@ import Foundation
 import GRDB
 
 public enum DayPlanError: Error, Equatable {
+    /// Edits and approval go to a plan the owner has seen; they never
+    /// create one.
+    case planNotFound
     case blockNotFound
-    /// Fixed blocks such as lunch change in Settings, not on the timeline.
-    case fixedBlock
+    /// The task was deleted while the block was being edited.
+    case taskNotFound
     case invalid(DayPlanProblem)
 }
 
 /// What a block edit did.
 public enum DayPlanEdit: Equatable, Sendable {
     case saved(DayPlan)
-    /// Nothing was saved: the block lands on these fixed blocks, and the
-    /// owner has to confirm before it is placed there.
+    /// Nothing was saved: the block overlaps these blocks across the fixed
+    /// line (see `DayBlockCheck.needsConfirmation`), and the owner has to
+    /// confirm first.
     case needsConfirmation([DayBlock])
 }
 
@@ -20,6 +24,11 @@ public enum DayPlanEdit: Equatable, Sendable {
 /// owner data: clearing caches never touches them. Each edit is read,
 /// checked against `DayPlanRules` and written in one write, and any edit
 /// makes an approved plan a draft again.
+///
+/// Only `dayPlan(for:)` creates a plan. Edits and approval name the date of
+/// the plan the owner is looking at and fail with `planNotFound` if it has
+/// none, so a page left open past midnight cannot approve a day it never
+/// showed.
 extension TaskRepository {
     public func dayPreferences() async throws -> DayPreferences {
         try await ownerDatabase.read { db in try Self.dayPreferences(db) }
@@ -36,11 +45,20 @@ extension TaskRepository {
     /// the first time it is asked for.
     public func dayPlan(for date: LocalDate) async throws -> DayPlan {
         let createdAt = now()
-        return try await ownerDatabase.write { db in try Self.dayPlan(date, creatingAt: createdAt, db) }
+        return try await ownerDatabase.write { db in
+            if let plan = try Self.dayPlan(date, db) { return plan }
+            let preferences = try Self.dayPreferences(db)
+            try DayPlanRow(date: date, workingHours: preferences.workingHours, createdAt: createdAt).insert(db)
+            for block in preferences.dayBlocks {
+                var row = DayBlockRow(block, in: date)
+                try row.insert(db)
+            }
+            return try Self.dayPlan(date, db)!
+        }
     }
 
-    /// Adds a block to the plan for `date`, creating the plan if needed.
-    /// One that lands on a fixed block is saved only when `confirmed`.
+    /// Adds an ordinary block to the plan for `date`. One that lands on a
+    /// fixed block is saved only when `confirmed`.
     public func addBlock(_ block: DayBlock, to date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         var block = block
         block.id = nil
@@ -48,17 +66,19 @@ extension TaskRepository {
         return try await editBlock(block, in: date, confirmed: confirmed)
     }
 
-    /// Moves or resizes a block, or changes its kind or task. Fixed blocks
-    /// are refused.
+    /// Moves or resizes a block, or changes its kind or task. A fixed block
+    /// such as lunch may be moved or resized for this date only (the owner's
+    /// override; Settings are unchanged); it keeps its kind and stays fixed.
     public func updateBlock(_ block: DayBlock, in date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         guard block.id != nil else { throw DayPlanError.blockNotFound }
         return try await editBlock(block, in: date, confirmed: confirmed)
     }
 
+    /// Deletes a block. Deleting a fixed block skips it for this date only.
     public func deleteBlock(_ id: Int64, from date: LocalDate) async throws -> DayPlan {
         try await ownerDatabase.write { db in
-            let stored = try Self.storedBlock(id, in: date, db)
-            guard !stored.isFixed else { throw DayPlanError.fixedBlock }
+            _ = try Self.existingPlan(date, db)
+            _ = try Self.storedBlock(id, in: date, db)
             _ = try DayBlockRow.deleteOne(db, key: id)
             try Self.markDraft(date, db)
             return try Self.dayPlan(date, db)!
@@ -70,7 +90,7 @@ extension TaskRepository {
     public func approveDayPlan(for date: LocalDate) async throws -> DayPlan {
         let approvedAt = now()
         return try await ownerDatabase.write { db in
-            let plan = try Self.dayPlan(date, creatingAt: approvedAt, db)
+            let plan = try Self.existingPlan(date, db)
             if let problem = DayPlanRules.problems(in: plan).first { throw DayPlanError.invalid(problem) }
             try db.execute(sql: "UPDATE dayPlan SET state = 'approved', approvedAt = ? WHERE date = ? AND state = 'draft'",
                            arguments: [approvedAt, date.isoString])
@@ -79,26 +99,33 @@ extension TaskRepository {
     }
 
     private func editBlock(_ block: DayBlock, in date: LocalDate, confirmed: Bool) async throws -> DayPlanEdit {
-        let createdAt = now()
-        return try await ownerDatabase.write { db in
-            let plan = try Self.dayPlan(date, creatingAt: createdAt, db)
+        try await ownerDatabase.write { db in
+            let plan = try Self.existingPlan(date, db)
             var block = block
             if let id = block.id {
                 let stored = try Self.storedBlock(id, in: date, db)
-                guard !stored.isFixed else { throw DayPlanError.fixedBlock }
-                block.isFixed = false
+                block.isFixed = stored.isFixed
+                if stored.isFixed { block.kind = stored.kind }
             }
             if block.kind != .task { block.taskID = nil }
+            if let taskID = block.taskID, try !TaskRecord.exists(db, key: taskID) {
+                throw DayPlanError.taskNotFound
+            }
             switch DayPlanRules.check(block, among: plan.blocks, workingHours: plan.workingHours) {
             case .invalid(let problem): throw DayPlanError.invalid(problem)
-            case .overlapsFixed(let fixed) where !confirmed: return .needsConfirmation(fixed)
-            case .fits, .overlapsFixed: break
+            case .needsConfirmation(let overlapping) where !confirmed: return .needsConfirmation(overlapping)
+            case .fits, .needsConfirmation: break
             }
             var row = DayBlockRow(block, in: date)
             if block.id == nil { try row.insert(db) } else { try row.update(db) }
             try Self.markDraft(date, db)
             return .saved(try Self.dayPlan(date, db)!)
         }
+    }
+
+    private static func existingPlan(_ date: LocalDate, _ db: Database) throws -> DayPlan {
+        guard let plan = try dayPlan(date, db) else { throw DayPlanError.planNotFound }
+        return plan
     }
 
     private static func storedBlock(_ id: Int64, in date: LocalDate, _ db: Database) throws -> DayBlock {
@@ -110,18 +137,6 @@ extension TaskRepository {
 
     private static func markDraft(_ date: LocalDate, _ db: Database) throws {
         try db.execute(sql: "UPDATE dayPlan SET state = 'draft', approvedAt = NULL WHERE date = ?", arguments: [date.isoString])
-    }
-
-    /// Creates the plan from the current preferences if `date` has none.
-    private static func dayPlan(_ date: LocalDate, creatingAt createdAt: Date, _ db: Database) throws -> DayPlan {
-        if let plan = try dayPlan(date, db) { return plan }
-        let preferences = try dayPreferences(db)
-        try DayPlanRow(date: date, workingHours: preferences.workingHours, createdAt: createdAt).insert(db)
-        for block in preferences.dayBlocks {
-            var row = DayBlockRow(block, in: date)
-            try row.insert(db)
-        }
-        return try dayPlan(date, db)!
     }
 
     private static func dayPreferences(_ db: Database) throws -> DayPreferences {

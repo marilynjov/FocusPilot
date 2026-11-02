@@ -39,7 +39,20 @@ struct DayPlanRulesTests {
     }
 
     @Test func landingOnAFixedBlockNeedsConfirmation() {
-        #expect(check(block((11, 30), (12, 30))) == .overlapsFixed([lunch]))
+        #expect(check(block((11, 30), (12, 30))) == .needsConfirmation([lunch]))
+    }
+
+    @Test func movingLunchForTodayOntoATaskNeedsConfirmation() {
+        var moved = lunch
+        moved.span = TimeSpan(ClockTime(10, 0), ClockTime(11, 0))
+        #expect(check(moved) == .needsConfirmation([writing]))
+    }
+
+    @Test func fixedBlocksCannotOverlapEachOther() {
+        let coffee = DayBlock(id: 3, kind: .break, start: ClockTime(15, 0), end: ClockTime(15, 15), isFixed: true)
+        var moved = coffee
+        moved.span = TimeSpan(ClockTime(12, 45), ClockTime(13, 0))
+        #expect(DayPlanRules.check(moved, among: [lunch, coffee], workingHours: hours) == .invalid(.overlap(moved, lunch)))
     }
 
     @Test func anOrdinaryOverlapOutranksAFixedOne() {
@@ -95,12 +108,34 @@ struct DayPlanRulesTests {
         #expect(preferences.problem == .notAFixedKind(.task))
     }
 
+    private let twentyFourHour = Locale(identifier: "en_GB")
+    private let twelveHour = Locale(identifier: "en_US")
+
     @Test func messagesNameTheBlocksAndTimes() {
         let candidate = block((10, 0), (11, 0))
-        #expect(DayPlanText.message(.overlap(candidate, lunch)) == "Task 10:00–11:00 overlaps Lunch 12:00–13:00.")
-        #expect(DayPlanText.message(.outsideWorkingHours(candidate, TimeSpan(ClockTime(11, 0), ClockTime(17, 0))))
+        #expect(DayPlanText.message(.overlap(candidate, lunch), locale: twentyFourHour)
+                == "Task 10:00–11:00 overlaps Lunch 12:00–13:00.")
+        #expect(DayPlanText.message(.outsideWorkingHours(candidate, TimeSpan(ClockTime(11, 0), ClockTime(17, 0))),
+                                    locale: twentyFourHour)
                 == "Task 10:00–11:00 is outside your working hours (11:00–17:00).")
-        #expect(DayPlanText.confirmation([lunch]) == "This overlaps Lunch 12:00–13:00. Place it anyway?")
+        #expect(DayPlanText.confirmation([lunch], locale: twentyFourHour) == "This overlaps Lunch 12:00–13:00. Place it anyway?")
+    }
+
+    /// The formatter may put a narrow no-break space before AM and PM.
+    private func plainSpaces(_ text: String) -> String {
+        text.replacing("\u{202F}", with: " ")
+    }
+
+    @Test func timesFollowTheTwelveOrTwentyFourHourClock() {
+        #expect(plainSpaces(DayPlanText.time(ClockTime(9, 0), locale: twelveHour)) == "9:00 AM")
+        #expect(plainSpaces(DayPlanText.times(lunch.span, locale: twelveHour)) == "12:00 PM–1:00 PM")
+        #expect(DayPlanText.time(ClockTime(9, 0), locale: twentyFourHour) == "9:00")
+        #expect(DayPlanText.time(ClockTime(13, 30), locale: twentyFourHour) == "13:30")
+    }
+
+    @Test func theMidnightThatEndsTheDayHasALabel() {
+        #expect(DayPlanText.time(minutesAfterMidnight: 24 * 60, locale: twentyFourHour) == "0:00")
+        #expect(plainSpaces(DayPlanText.time(minutesAfterMidnight: 24 * 60, locale: twelveHour)) == "12:00 AM")
     }
 
     @Test func clockTimesReadOnlyTheStoredForm() {

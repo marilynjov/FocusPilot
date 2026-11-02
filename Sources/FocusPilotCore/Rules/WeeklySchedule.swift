@@ -32,6 +32,7 @@ public struct ClockTime: Hashable, Comparable, Sendable, Codable, CustomStringCo
 
     /// The time `minutes` after midnight, which must fall within one day.
     public init(minutes: Int) {
+        precondition((0..<24 * 60).contains(minutes), "\(minutes) minutes is not a time of day")
         self.init(minutes / 60, minutes % 60)
     }
 

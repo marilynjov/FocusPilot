@@ -25,6 +25,18 @@ struct DayPlanStorageTests {
         return plan
     }
 
+    /// Opens today's plan, as the page does, then adds `block` to it.
+    private func addToToday(_ block: DayBlock, confirmed: Bool = false) async throws -> DayPlanEdit {
+        _ = try await repository.dayPlan(for: today)
+        return try await repository.addBlock(block, to: today, confirmed: confirmed)
+    }
+
+    private func storedPlanCount() async throws -> Int {
+        try await DatabaseQueue(path: location.ownerDatabaseURL.path).read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM dayPlan")!
+        }
+    }
+
     @Test func aNewDayStartsAsADraftFromTheStandardPreferences() async throws {
         let plan = try await repository.dayPlan(for: today)
 
@@ -67,7 +79,7 @@ struct DayPlanStorageTests {
 
     @Test func blocksCanBeAddedMovedResizedAndDeleted() async throws {
         let essay = try await repository.addTask(NewTask(title: "Write the essay"))
-        var plan = try saved(try await repository.addBlock(task((9, 0), (10, 0), taskID: essay.id), to: today))
+        var plan = try saved(try await addToToday(task((9, 0), (10, 0), taskID: essay.id)))
         var block = try #require(plan.blocks.first { !$0.isFixed })
         #expect(plan.title(of: block) == "Write the essay")
 
@@ -87,15 +99,15 @@ struct DayPlanStorageTests {
         let lunch = try #require(try await repository.dayPlan(for: today).blocks.first)
         let overLunch = task((11, 30), (12, 30))
 
-        #expect(try await repository.addBlock(overLunch, to: today) == .needsConfirmation([lunch]))
+        #expect(try await addToToday(overLunch) == .needsConfirmation([lunch]))
         #expect(try await repository.dayPlan(for: today).blocks.count == 1)
 
-        let plan = try saved(try await repository.addBlock(overLunch, to: today, confirmed: true))
+        let plan = try saved(try await addToToday(overLunch, confirmed: true))
         #expect(plan.blocks.map(\.start) == [ClockTime(11, 30), ClockTime(12, 0)])
     }
 
     @Test func invalidEditsAreRefusedAndChangeNothing() async throws {
-        let plan = try saved(try await repository.addBlock(task((9, 0), (10, 0)), to: today))
+        let plan = try saved(try await addToToday(task((9, 0), (10, 0))))
         let clash = task((9, 30), (10, 30))
 
         await #expect(throws: DayPlanError.invalid(.overlap(clash, plan.blocks[0]))) {
@@ -109,23 +121,57 @@ struct DayPlanStorageTests {
         #expect(try await repository.dayPlan(for: today) == plan)
     }
 
-    @Test func fixedBlocksChangeOnlyInSettings() async throws {
+    @Test func lunchCanBeMovedForOneDayWithoutChangingSettings() async throws {
         var lunch = try #require(try await repository.dayPlan(for: today).blocks.first)
-        lunch.start = ClockTime(11, 0)
+        lunch.span = TimeSpan(ClockTime(13, 0), ClockTime(14, 0))
+        // A fixed block keeps its kind and stays fixed, whatever the edit says.
+        lunch.kind = .task
+        lunch.isFixed = false
 
-        await #expect(throws: DayPlanError.fixedBlock) { try await repository.updateBlock(lunch, in: today) }
-        await #expect(throws: DayPlanError.fixedBlock) { try await repository.deleteBlock(lunch.id!, from: today) }
+        let plan = try saved(try await repository.updateBlock(lunch, in: today))
+
+        #expect(plan.blocks == [DayBlock(id: lunch.id, kind: .lunch, start: ClockTime(13, 0), end: ClockTime(14, 0), isFixed: true)])
+        #expect(try await repository.dayPreferences() == .standard)
+        #expect(try await repository.dayPlan(for: tomorrow).blocks.map(\.start) == [ClockTime(12, 0)])
+    }
+
+    @Test func lunchCanBeSkippedForOneDayWithoutChangingSettings() async throws {
+        let lunch = try #require(try await repository.dayPlan(for: today).blocks.first)
+
+        let plan = try await repository.deleteBlock(lunch.id!, from: today)
+
+        #expect(plan.blocks.isEmpty)
+        #expect(try await repository.dayPreferences() == .standard)
+        #expect(try await repository.dayPlan(for: tomorrow).blocks.map(\.kind) == [.lunch])
+    }
+
+    @Test func movingLunchOntoATaskNeedsConfirmation() async throws {
+        let plan = try saved(try await addToToday(task((13, 0), (14, 0))))
+        let block = try #require(plan.blocks.first { !$0.isFixed })
+        var lunch = try #require(plan.blocks.first { $0.isFixed })
+        lunch.span = TimeSpan(ClockTime(13, 30), ClockTime(14, 30))
+
+        #expect(try await repository.updateBlock(lunch, in: today) == .needsConfirmation([block]))
+        #expect(try await repository.dayPlan(for: today) == plan)
+        #expect(try saved(try await repository.updateBlock(lunch, in: today, confirmed: true)).blocks.count == 2)
     }
 
     @Test func aBlockFromAnotherDayIsNotFound() async throws {
-        let plan = try saved(try await repository.addBlock(task((9, 0), (10, 0)), to: today))
+        let plan = try saved(try await addToToday(task((9, 0), (10, 0))))
         let block = try #require(plan.blocks.first { !$0.isFixed })
+        _ = try await repository.dayPlan(for: tomorrow)
 
         await #expect(throws: DayPlanError.blockNotFound) { try await repository.deleteBlock(block.id!, from: tomorrow) }
     }
 
+    @Test func aMissingTaskIsReportedAsSuch() async throws {
+        await #expect(throws: DayPlanError.taskNotFound) {
+            try await addToToday(task((9, 0), (10, 0), taskID: 42))
+        }
+    }
+
     @Test func approvingMarksThePlanAndAnyEditMakesItADraftAgain() async throws {
-        _ = try await repository.addBlock(task((9, 0), (10, 0)), to: today)
+        _ = try await addToToday(task((9, 0), (10, 0)))
 
         var plan = try await repository.approveDayPlan(for: today)
         #expect(plan.state == .approved)
@@ -135,6 +181,40 @@ struct DayPlanStorageTests {
         block.end = ClockTime(10, 30)
         plan = try saved(try await repository.updateBlock(block, in: today))
         #expect(plan.state == .draft)
+    }
+
+    @Test func approvingOrEditingADayWithNoPlanCreatesNothing() async throws {
+        await #expect(throws: DayPlanError.planNotFound) { try await repository.approveDayPlan(for: tomorrow) }
+        await #expect(throws: DayPlanError.planNotFound) { try await repository.addBlock(task((9, 0), (10, 0)), to: tomorrow) }
+
+        #expect(try await storedPlanCount() == 0)
+    }
+
+    @Test func afterMidnightTheOldPageApprovesOnlyThePlanItShows() async throws {
+        // The page opened Wednesday's plan; the Mac's clock then passes midnight.
+        _ = try await addToToday(task((9, 0), (10, 0)))
+        clock.set(instant("2026-10-15T00:05:00-05:00"))
+        #expect(LocalDate(containing: clock.now, in: bogota) == tomorrow)
+
+        let approved = try await repository.approveDayPlan(for: today)
+
+        #expect(approved.date == today)
+        #expect(approved.state == .approved)
+        #expect(try await storedPlanCount() == 1)
+        let thursday = try await repository.dayPlan(for: tomorrow)
+        #expect(thursday.state == .draft)
+        #expect(thursday.blocks.map(\.kind) == [.lunch])
+    }
+
+    @Test func eachDateHasItsOwnPlan() async throws {
+        _ = try await addToToday(task((9, 0), (10, 0)))
+        let thursday = try await repository.dayPlan(for: tomorrow)
+
+        _ = try await repository.addBlock(task((14, 0), (15, 0)), to: tomorrow)
+
+        #expect(thursday.blocks.count == 1)
+        #expect(try await repository.dayPlan(for: today).blocks.map(\.start) == [ClockTime(9, 0), ClockTime(12, 0)])
+        #expect(try await repository.dayPlan(for: tomorrow).blocks.map(\.start) == [ClockTime(12, 0), ClockTime(14, 0)])
     }
 
     @Test func aPlanWithAProblemCannotBeApproved() async throws {
@@ -153,9 +233,8 @@ struct DayPlanStorageTests {
 
     @Test func deletingATaskKeepsItsBlockWithoutATask() async throws {
         let essay = try await repository.addTask(NewTask(title: "Write the essay"))
-        _ = try await repository.addBlock(task((9, 0), (10, 0), taskID: essay.id), to: today)
+        _ = try await addToToday(task((9, 0), (10, 0), taskID: essay.id))
         try await DatabaseQueue(path: location.ownerDatabaseURL.path).write { db in
-            try db.execute(sql: "PRAGMA foreign_keys = ON")
             try db.execute(sql: "DELETE FROM task")
         }
 
@@ -165,14 +244,14 @@ struct DayPlanStorageTests {
 
     @Test func onlyTaskBlocksKeepATask() async throws {
         let essay = try await repository.addTask(NewTask(title: "Write the essay"))
-        let plan = try saved(try await repository.addBlock(
-            DayBlock(kind: .break, start: ClockTime(10, 0), end: ClockTime(10, 15), taskID: essay.id), to: today))
+        let plan = try saved(try await addToToday(
+            DayBlock(kind: .break, start: ClockTime(10, 0), end: ClockTime(10, 15), taskID: essay.id)))
 
         #expect(plan.blocks.allSatisfy { $0.taskID == nil })
     }
 
     @Test func plansSurviveClearingCachesAndReopening() async throws {
-        _ = try await repository.addBlock(task((9, 0), (10, 0)), to: today)
+        _ = try await addToToday(task((9, 0), (10, 0)))
         let approved = try await repository.approveDayPlan(for: today)
 
         try await repository.clearCaches()

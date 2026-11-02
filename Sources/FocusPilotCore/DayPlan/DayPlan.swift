@@ -25,7 +25,11 @@ public struct TimeSpan: Hashable, Sendable, Codable {
 }
 
 /// One block of a day plan (decision 0004): a task, a break, lunch or the
-/// end-of-day wrap-up, between two times of that day.
+/// end-of-day wrap-up, between two wall-clock times of the plan's date.
+///
+/// The times are never turned into instants here. When D3 runs blocks as
+/// sessions, that conversion must handle DST: a time in a spring-forward gap
+/// does not exist that day, and one in an autumn overlap happens twice.
 public struct DayBlock: Hashable, Sendable, Identifiable {
     public enum Kind: String, CaseIterable, Codable, Sendable {
         case task, `break`, lunch, wrapUp
@@ -48,7 +52,8 @@ public struct DayBlock: Hashable, Sendable, Identifiable {
     /// The task a task block is for, if the owner picked one. Other kinds have none.
     public var taskID: Int64?
     /// Copied from the owner's fixed daily blocks when the plan was created.
-    /// It is changed in Settings, not on the timeline.
+    /// The owner may move or remove it on one day's plan; that changes only
+    /// that day, never Settings.
     public var isFixed: Bool
 
     public init(id: Int64? = nil, kind: Kind, start: ClockTime, end: ClockTime, taskID: Int64? = nil, isFixed: Bool = false) {
