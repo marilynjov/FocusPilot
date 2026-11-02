@@ -30,8 +30,8 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - 2026-11-01: Compact views: a menu bar countdown with a small menu, a mini floating panel, and a raccoon-only mode.
 - 2026-11-02: Raccoon art comes from the owner's "Raccoon Pet: poses & emotions" sheet (20 named poses such as Idle, Working, Waiting). Each pose is split into layers: body, head, a closed-eyes head for blinking, objects that never move (laptop, sign, wall, ledge and paws), floating effects (hearts, zzz, steam) and the floor shadow. The shadow never moves sideways except under the walking pose, and walking swings four separate legs. This replaces the earlier proposal of whole-pose crossfades.
 - 2026-11-02: Color palettes, each with light and dark versions that follow the Mac's appearance by default: Raccoon (warm), Neutral, Colorful (pastel in light mode), Forest, and System (based on the Phase 1 macOS look, with a softer, brown-free dark mode). Exact colors are on screen 7 of the design canvas.
-- 2026-11-02: The AI planner (D9) uses Claude through the Anthropic API with the owner's own API key, stored in the macOS Keychain.
-- 2026-11-02: Defaults: a 10-minute break after every 90 minutes of focus within a long task, and a 5-minute buffer between tasks.
+- 2026-11-02: The AI planner (D9, issue #10) uses Claude through the Anthropic API with the owner's own API key, stored in the macOS Keychain. The API is called directly over HTTPS; no SDK dependency is added. This settles the provider part of decision 0001's open item on model choice.
+- 2026-11-02: Defaults: a 10-minute break after every 90 minutes of focus inside a long task block, and a 5-minute buffer between task blocks.
 - 2026-11-02: A new install starts with the Colorful palette, following the Mac's light or dark appearance.
 - 2026-11-02: Agent monitoring is off by default for a new install.
 
@@ -53,7 +53,8 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 
 ## Open decisions
 
-- Which Claude model the planner uses (decided in D9, with its cost per plan).
+- Which Claude model the planner uses (decided in D9, issue #10, with its cost per plan).
+- Which context the planner may send to Claude: proposed, only the text the owner typed and the task list, each request opt-in (from decision 0001's open item on context scope).
 - Whether the owner owns usage rights to the raccoon sprite sheets, which were AI-generated, before any public release.
 
 ## Mockups
