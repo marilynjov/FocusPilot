@@ -57,13 +57,16 @@ final class RaccoonCompanionController {
                 }
             })
         }
-        // Move to the corner again when displays change.
-        observers.append(Task { [weak self] in
-            for await _ in NotificationCenter.default.notifications(named: NSApplication.didChangeScreenParametersNotification) {
-                guard let self else { break }
-                placePanel()
-            }
-        })
+        // Move to the corner again when displays change or the planning
+        // window moves to another display.
+        for name in [NSApplication.didChangeScreenParametersNotification, NSWindow.didChangeScreenNotification] {
+            observers.append(Task { [weak self] in
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    guard let self else { break }
+                    placePanel()
+                }
+            })
+        }
     }
 
     /// Why the art could not be loaded, if it could not.
@@ -161,9 +164,13 @@ final class RaccoonCompanionController {
         return panel
     }
 
-    /// Bottom-right corner of the chosen display, above the Dock.
+    /// Bottom-right corner, above the Dock, of the display the planning
+    /// window is on while it is open (owner request, 2026-11-02), else of
+    /// the display chosen in Settings.
     func placePanel() {
-        guard let panel, let screen = NSScreen.raccoonScreen(model.displayPreferences.raccoonScreen) else { return }
+        guard let panel,
+              let screen = model.planningWindow?.screen ?? NSScreen.raccoonScreen(model.displayPreferences.raccoonScreen)
+        else { return }
         let visible = screen.visibleFrame
         let size = panel.frame.size
         panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - Self.margin, y: visible.minY + Self.margin))

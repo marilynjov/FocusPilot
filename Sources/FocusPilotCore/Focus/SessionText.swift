@@ -33,12 +33,12 @@ public struct SessionText: Sendable {
 
     /// "24:08" to the planned end, which pauses never move.
     public func timeLeft(at now: Date) -> String {
-        MenuBarStatus.format(remaining: session.plannedEnd.timeIntervalSince(now))
+        MenuBarStatus.format(remaining: session.remaining(at: now))
     }
 
     /// "24 min left", rounded up, for Reduce Motion: it changes once a minute.
     public func minutesLeft(at now: Date) -> String {
-        let seconds = max(0, session.plannedEnd.timeIntervalSince(now))
+        let seconds = max(0, session.remaining(at: now))
         return "\(Int((seconds / 60).rounded(.up))) min left"
     }
 

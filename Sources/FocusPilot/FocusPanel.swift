@@ -38,7 +38,8 @@ final class FocusPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        let host = NSHostingView(rootView: FocusPanelView(model: model).paletteTheme(model.displayPreferences))
+        var fit: () -> Void = {}
+        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         if panel.setFrameUsingName("FocusPanel") {
@@ -61,6 +62,14 @@ final class FocusPanelController {
             panel.setFrame(frame, display: false)
         }
         panel.setFrameAutosaveName("FocusPanel")
+        // Collapsing to the pill and expanding again size the panel to fit,
+        // keeping its top-left corner where it is.
+        fit = { [weak panel, weak host] in
+            guard let panel, let host else { return }
+            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            panel.setContentSize(host.fittingSize)
+            panel.setFrameTopLeftPoint(top)
+        }
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -69,12 +78,15 @@ final class FocusPanelController {
 /// The panel's content: expanded with Pause and Complete, or a collapsed pill.
 struct FocusPanelView: View {
     let model: AppModel
+    /// Asks the panel to fit the new size after collapsing or expanding.
+    var onResize: () -> Void = {}
     @State private var isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
 
-    init(model: AppModel, isCollapsed: Bool = false) {
+    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}) {
         self.model = model
+        self.onResize = onResize
         _isCollapsed = State(initialValue: isCollapsed)
     }
 
@@ -85,6 +97,7 @@ struct FocusPanelView: View {
             }
         }
         .fixedSize()
+        .onChange(of: isCollapsed) { DispatchQueue.main.async { onResize() } }
     }
 
     private func expanded(_ session: FocusSession) -> some View {
@@ -130,6 +143,8 @@ struct FocusPanelView: View {
                 Text(reduceMotion ? text.minutesLeft(at: model.now) : text.timeLeft(at: model.now))
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
                 Text(session.action)
                     .font(.callout)
                     .foregroundStyle(.secondary)
