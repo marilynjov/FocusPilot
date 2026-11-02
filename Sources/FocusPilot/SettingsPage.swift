@@ -5,7 +5,7 @@ import SwiftUI
 /// Browsers and iPhone arrive with #17 and #22.
 struct SettingsPage: View {
     enum Tab: String, CaseIterable {
-        case blocking = "Blocking", allowed = "Allowed", observe = "Observe", general = "General"
+        case blocking = "Blocking", allowed = "Allowed", observe = "Observe", day = "Day", general = "General"
     }
 
     let model: AppModel
@@ -26,6 +26,7 @@ struct SettingsPage: View {
                 case .blocking: BlockingSettings(model: model)
                 case .allowed: AllowedSettings(model: model)
                 case .observe: ObserveSettings(model: model)
+                case .day: DaySettings(model: model)
                 case .general: GeneralSettings(model: model)
                 }
             }

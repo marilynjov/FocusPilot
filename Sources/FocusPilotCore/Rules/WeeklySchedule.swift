@@ -27,7 +27,21 @@ public struct ClockTime: Hashable, Comparable, Sendable, Codable, CustomStringCo
         self.minute = minute
     }
 
-    var minutes: Int { hour * 60 + minute }
+    /// Minutes since midnight.
+    public var minutes: Int { hour * 60 + minute }
+
+    /// The time `minutes` after midnight, which must fall within one day.
+    public init(minutes: Int) {
+        precondition((0..<24 * 60).contains(minutes), "\(minutes) minutes is not a time of day")
+        self.init(minutes / 60, minutes % 60)
+    }
+
+    /// Only the exact form "HH:mm", as written by `description`.
+    public init?(_ text: String) {
+        guard let match = text.wholeMatch(of: /([0-9]{2}):([0-9]{2})/),
+              let hour = Int(match.1), let minute = Int(match.2), hour < 24, minute < 60 else { return nil }
+        self.init(hour, minute)
+    }
 
     public var description: String { String(format: "%02d:%02d", hour, minute) }
 

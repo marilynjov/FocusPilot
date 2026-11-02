@@ -242,6 +242,41 @@ enum OwnerSchema {
             }
             try db.create(index: "rawActivity_on_end", on: RawActivityRow.databaseTableName, columns: ["end"])
         }
+        migrator.registerMigration("owner-v12-day-plan") { db in
+            // Working hours and fixed daily blocks (decision 0004). No row
+            // means the standard preferences; times are "HH:mm".
+            try db.create(table: DayPreferencesRow.databaseTableName) { table in
+                table.primaryKey("id", .integer).check(sql: "id = 1")
+                table.column("workStart", .text).notNull()
+                table.column("workEnd", .text).notNull()
+                table.column("fixedBlocks", .text).notNull()
+            }
+            // One plan per local date ("YYYY-MM-DD"), keeping the working
+            // hours it was created with.
+            try db.create(table: DayPlanRow.databaseTableName) { table in
+                table.primaryKey("date", .text)
+                table.column("state", .text).notNull().check(sql: "state IN ('draft', 'approved')")
+                table.column("workStart", .text).notNull()
+                table.column("workEnd", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("approvedAt", .datetime)
+            }
+            try db.create(table: DayBlockRow.databaseTableName) { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("planDate", .text).notNull()
+                    .references(DayPlanRow.databaseTableName, onDelete: .cascade)
+                table.column("kind", .text).notNull().check(sql: "kind IN ('task', 'break', 'lunch', 'wrapUp')")
+                table.column("startTime", .text).notNull()
+                table.column("endTime", .text).notNull()
+                // A deleted task leaves its block in place, with no task.
+                table.column("taskId", .integer).references(TaskRecord.databaseTableName, onDelete: .setNull)
+                table.column("isFixed", .boolean).notNull().defaults(to: false)
+                table.check(sql: "startTime < endTime")
+                table.check(sql: "taskId IS NULL OR kind = 'task'")
+            }
+            try db.create(index: "dayBlock_on_planDate", on: DayBlockRow.databaseTableName, columns: ["planDate"])
+            try db.create(index: "dayBlock_on_taskId", on: DayBlockRow.databaseTableName, columns: ["taskId"])
+        }
         return migrator
     }
 

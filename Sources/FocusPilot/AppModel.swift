@@ -63,6 +63,11 @@ final class AppModel {
     @ObservationIgnored var activityTracker = ActivityTracker(ownBundleID: Bundle.main.bundleIdentifier)
     var weeklySummary: WeeklySummary?
     var observeError: String?
+    /// Today's plan and the day preferences (D1); see `AppModel+DayPlan.swift`.
+    var dayPlan: DayPlan?
+    var dayPlanError: String?
+    var dayPreferences = DayPreferences.standard
+    var dayPreferencesError: String?
     /// Pending reconcile at the next session deadline.
     @ObservationIgnored var reconcileTask: Task<Void, Never>?
     @ObservationIgnored lazy var focusPanel = FocusPanelController(model: self)
