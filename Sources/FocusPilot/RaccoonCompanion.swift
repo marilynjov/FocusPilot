@@ -31,6 +31,8 @@ final class RaccoonCompanionController {
     private var art: RaccoonArt?
     private var artError: String?
     private var shown: RaccoonPresence?
+    /// Whether the pointer is over the floating raccoon or its bubble.
+    private var isHovered = false
     private var peekTask: Task<Void, Never>?
     private var observers: [Task<Void, Never>] = []
 
@@ -68,6 +70,10 @@ final class RaccoonCompanionController {
             })
         }
     }
+
+    /// Whether the raccoon is floating on screen. While it is, it stands in
+    /// for the focus panel, which opens only from a click on it.
+    var isOnScreen: Bool { panel != nil }
 
     /// Why the art could not be loaded, if it could not.
     var problem: String? { artError }
@@ -124,16 +130,41 @@ final class RaccoonCompanionController {
         self.panel = panel
         stage?.show(pose: pose, layers: layers, motions: art.manifest.motions,
                     reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-        stage?.setBubble(presence.message)
         placePanel()
         panel.orderFrontRegardless()
+        refreshBubble()
+        model.focusPanel.update()
     }
 
     private func hide() {
         stage?.setBubble(nil)
+        panel?.followMouse(nil)
         panel?.orderOut(nil)
         panel = nil
         stage = nil
+        isHovered = false
+        model.focusPanel.update()
+    }
+
+    /// A peek's message, else the time and task while the pointer is over
+    /// the raccoon (owner request, 2026-11-02), else no bubble.
+    private func refreshBubble() {
+        let message = shown?.message ?? (isHovered ? hoverText : nil)
+        if stage?.bubbleMessage != message { stage?.setBubble(message) }
+    }
+
+    private var hoverText: String? {
+        guard let session = model.snapshot.activeSession else { return nil }
+        let text = SessionText(session)
+        let time = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? text.minutesLeft(at: .now) : "\(text.timeLeft(at: .now)) left"
+        return session.phase == .running ? "\(time) · \(session.action)" : "\(text.phase) · \(time) · \(session.action)"
+    }
+
+    /// Opens or closes the focus panel above the raccoon.
+    private func toggleFocusPanel() {
+        guard let panel else { return }
+        model.focusPanel.toggleFromRaccoon(above: panel.frame)
     }
 
     private func redraw() {
@@ -143,7 +174,11 @@ final class RaccoonCompanionController {
 
     private func makePanel(frameSize: CGFloat) -> RaccoonPanel {
         let stage = RaccoonStageView(frameSize: frameSize, sideRoom: Self.sideRoom, pointsPerPixel: Self.pointsPerPixel)
-        stage.onBubbleClick = { [weak self] in self?.endPeek() }
+        stage.onBubbleClick = { [weak self] in
+            guard let self else { return }
+            if model.raccoonPeek != nil { endPeek() } else { toggleFocusPanel() }
+        }
+        stage.onRaccoonClick = { [weak self] in self?.toggleFocusPanel() }
         let panel = RaccoonPanel(contentRect: NSRect(origin: .zero, size: stage.frame.size),
                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
@@ -159,8 +194,12 @@ final class RaccoonCompanionController {
         panel.isExcludedFromWindowsMenu = true
         panel.animationBehavior = .none
         panel.contentView = stage
-        stage.onBubbleChange = { [weak panel] hasBubble in panel?.followsMouseForBubble(hasBubble) }
         self.stage = stage
+        panel.followMouse { [weak self] hovered in
+            guard let self else { return }
+            isHovered = hovered
+            refreshBubble()
+        }
         return panel
     }
 
@@ -202,27 +241,32 @@ final class RaccoonPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// With a bubble shown, takes the mouse only while it is over the
-    /// bubble; a polled check, since an ignoring window gets no events.
-    func followsMouseForBubble(_ follows: Bool) {
+    /// Takes the mouse only while it is over the raccoon or its bubble, and
+    /// reports `hovered` on every check (the bubble's time changes while
+    /// hovered). Polled, since an ignoring window gets no events; nil stops.
+    func followMouse(_ hovered: (@MainActor (Bool) -> Void)?) {
         mouseTimer?.invalidate()
         mouseTimer = nil
         ignoresMouseEvents = true
-        guard follows else { return }
+        guard let hovered else { return }
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateMouse() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let over = self.isMouseOverContent
+                self.ignoresMouseEvents = !over
+                hovered(over)
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         mouseTimer = timer
     }
 
-    private func updateMouse() {
-        guard let stage = contentView as? RaccoonStageView, let bubble = stage.bubbleFrame else {
-            ignoresMouseEvents = true
-            return
+    private var isMouseOverContent: Bool {
+        guard let stage = contentView as? RaccoonStageView else { return false }
+        let mouse = NSEvent.mouseLocation
+        return [stage.poseFrame, stage.bubbleFrame].compactMap(\.self).contains {
+            convertToScreen(stage.convert($0, to: nil)).contains(mouse)
         }
-        let onScreen = convertToScreen(stage.convert(bubble, to: nil))
-        ignoresMouseEvents = !onScreen.contains(NSEvent.mouseLocation)
     }
 }
 
@@ -236,7 +280,8 @@ final class RaccoonStageView: NSView {
     let sideRoom: CGFloat
     let pointsPerPixel: CGFloat
     var onBubbleClick: (() -> Void)?
-    var onBubbleChange: ((Bool) -> Void)?
+    /// A click on the raccoon itself; nil leaves clicks passing through.
+    var onRaccoonClick: (() -> Void)?
     private let poseLayer = CALayer()
     private var bubble: RaccoonBubbleView?
 
@@ -265,11 +310,28 @@ final class RaccoonStageView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let bubble, bubble.frame.contains(convert(point, from: superview)) else { return nil }
-        return bubble
+        let local = convert(point, from: superview)
+        if let bubble, bubble.frame.contains(local) { return bubble }
+        if onRaccoonClick != nil, poseFrame.contains(local) { return self }
+        return nil
     }
 
     var bubbleFrame: NSRect? { bubble?.frame }
+    var bubbleMessage: String? { bubble?.message }
+    /// Where the raccoon is drawn, in this view's coordinates.
+    var poseFrame: NSRect { poseLayer.frame }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        onRaccoonClick?()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let onRaccoonClick else { return false }
+        onRaccoonClick()
+        return true
+    }
 
     func show(pose: RaccoonPoseArt, layers: [RaccoonLayer: CGImage], motions: [String: RaccoonMotion], reduceMotion: Bool) {
         CATransaction.begin()
@@ -279,6 +341,10 @@ final class RaccoonStageView: NSView {
             .build(into: poseLayer)
         CATransaction.commit()
         setAccessibilityLabel("Raccoon companion: \(pose.name)")
+        if onRaccoonClick != nil {
+            setAccessibilityRole(.button)
+            setAccessibilityHelp("Shows or hides the focus panel")
+        }
     }
 
     func setBubble(_ message: String?) {
@@ -291,7 +357,6 @@ final class RaccoonStageView: NSView {
             addSubview(view)
             bubble = view
         }
-        onBubbleChange?(bubble != nil)
     }
 }
 
@@ -299,8 +364,10 @@ final class RaccoonStageView: NSView {
 /// the peek. It accepts the first click, since its panel is never key.
 final class RaccoonBubbleView: NSView {
     var onClick: (() -> Void)?
+    let message: String
 
     init(message: String, maxWidth: CGFloat) {
+        self.message = message
         let label = NSTextField(wrappingLabelWithString: message)
         label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         label.textColor = .labelColor
@@ -317,7 +384,6 @@ final class RaccoonBubbleView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(message)
-        toolTip = "Click to dismiss"
     }
 
     @available(*, unavailable)

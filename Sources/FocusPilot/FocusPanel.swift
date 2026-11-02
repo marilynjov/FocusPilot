@@ -7,10 +7,15 @@ import SwiftUI
 /// It is a non-activating panel: clicking it never takes keyboard focus from
 /// the app the owner is typing in. It opens small in the top-right corner,
 /// can be dragged anywhere (the place is remembered) and collapses to a pill.
+/// While the raccoon floats on screen it stands in for the panel, which then
+/// opens only from a click on the raccoon (owner request, 2026-11-02).
 @MainActor
 final class FocusPanelController {
     private unowned let model: AppModel
     private var panel: NSPanel?
+    /// Opened from a click on the floating raccoon; closed by another click,
+    /// or when the raccoon leaves the screen.
+    private var isOpenedFromRaccoon = false
 
     init(model: AppModel) {
         self.model = model
@@ -18,13 +23,29 @@ final class FocusPanelController {
 
     /// Shows the panel while a session is active and the owner wants it.
     func update() {
-        let wanted = model.snapshot.activeSession != nil && model.menuBarPreferences.showsFocusPanel
+        if !model.raccoon.isOnScreen || model.snapshot.activeSession == nil { isOpenedFromRaccoon = false }
+        let wanted = model.snapshot.activeSession != nil
+            && (model.displayPreferences.raccoonMode == .staysOnScreen ? isOpenedFromRaccoon : model.menuBarPreferences.showsFocusPanel)
         if wanted, panel == nil {
             show()
         } else if !wanted, let panel {
             panel.orderOut(nil)
             self.panel = nil
         }
+    }
+
+    /// Opens the panel just above the raccoon at `raccoonFrame`, or closes it.
+    func toggleFromRaccoon(above raccoonFrame: NSRect) {
+        isOpenedFromRaccoon.toggle()
+        update()
+        guard isOpenedFromRaccoon, let panel else { return }
+        var frame = panel.frame
+        frame.origin = NSPoint(x: raccoonFrame.maxX - frame.width, y: raccoonFrame.maxY + 4)
+        if let visible = (NSScreen.screens.first { $0.frame.intersects(raccoonFrame) } ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        }
+        panel.setFrame(frame, display: true)
     }
 
     private func show() {

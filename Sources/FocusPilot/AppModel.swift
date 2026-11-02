@@ -139,7 +139,10 @@ final class AppModel {
         }
         displayPreferences.applyAppearance()
         displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
-        displayPreferences.raccoonModeDidChange = { [weak self] _ in self?.raccoon.update() }
+        displayPreferences.raccoonModeDidChange = { [weak self] _ in
+            self?.raccoon.update()
+            self?.focusPanel.update()
+        }
         displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
         refreshRaccoonWindowState()
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
