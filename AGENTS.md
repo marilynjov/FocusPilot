@@ -25,7 +25,7 @@ Code lands through pull requests only. A PR merges after its tests pass and an i
 
 ### Issue tracker
 
-GitHub Issues in the private `SantiagoM99/FocusPilot` repo, via `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues in the `marilynjov/FocusPilot` fork, via `gh`. See `docs/agents/issue-tracker.md`. The fork's `upstream` remote is `SantiagoM99/FocusPilot`: fetch from it to pick up Santiago's work, but never push, open pull requests, or file issues there unless the owner asks (decision 0004).
 
 ### Triage labels
 

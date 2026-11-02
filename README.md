@@ -21,6 +21,7 @@ FocusPilot helps its owner choose a concrete next action, work across Herdr and 
 - [Decision log](docs/decisions/0001-initial-design.md): accepted choices and open decisions.
 - [Observability decision](docs/decisions/0002-ai-observability-and-workload.md): native orchestration, local accounting and LangSmith boundaries.
 - [Review corrections](docs/decisions/0003-architecture-review-corrections.md): accepted process model, enforcement ownership, data-model fixes and owner constraints.
+- [Day planner and companion](docs/decisions/0004-day-planner-and-companion.md): this fork's direction: approved day plans, quick timer, raccoon companion, optional agent monitoring.
 - [Product critique](docs/reviews/PRODUCT_REVIEW.md) and [architecture critique](docs/reviews/ARCHITECTURE_REVIEW.md): independent adversarial reviews.
 
 ## Current constraints
