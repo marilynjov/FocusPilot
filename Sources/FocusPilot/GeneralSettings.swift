@@ -37,7 +37,7 @@ struct GeneralSettings: View {
                         }
                     }
                 }
-                Text("While a task is under way, the raccoon is in the corner of this window: working, sitting while paused, or with coffee on a break. When you switch to another app or close this window, it moves to the bottom-right corner of the screen you choose, above other windows, and clicks go through it. With Reduce Motion on, it stays still.")
+                Text("While a task is under way, the raccoon is in the corner of this window: working, sitting while paused, or with coffee on a break. When you switch to another app, it moves to the bottom-right corner of the screen this window is on, above other windows, and clicks go through it. With this window closed, it uses the screen you choose here. With Reduce Motion on, it stays still.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

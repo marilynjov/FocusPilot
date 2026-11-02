@@ -59,10 +59,17 @@ final class AppModel {
     /// Reads the app and window state directly, so a missed notification
     /// cannot leave it stale.
     func refreshRaccoonWindowState() {
-        let app = NSApplication.shared
-        isPlanningWindowInFront = app.isActive
-            && app.windows.contains { $0.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true && $0.isVisible && !$0.isMiniaturized }
+        isPlanningWindowInFront = NSApplication.shared.isActive && planningWindow != nil
         raccoon.update()
+        raccoon.placePanel()
+    }
+
+    /// The planning window while it is open and not minimized.
+    var planningWindow: NSWindow? {
+        guard isPlanningWindowOpen else { return nil }
+        return NSApplication.shared.windows.first {
+            $0.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true && $0.isVisible && !$0.isMiniaturized
+        }
     }
     /// Why the last exception request was refused.
     var exceptionError: String?
