@@ -41,11 +41,17 @@ final class AppModel {
     var ruleEditToConfirm: RuleEdit?
     /// Asks the planning window to show a page, e.g. Settings from ⌘,.
     var requestedPage: PlanningView.Page?
-    /// Whether the planning window is open; the raccoon shows there while
-    /// it is, and on screen while it is not.
+    /// Whether the planning window is open.
     var isPlanningWindowOpen = false {
         didSet { raccoon.update() }
     }
+    /// Whether FocusPilot is the frontmost app.
+    var isAppActive = false {
+        didSet { raccoon.update() }
+    }
+    /// The raccoon shows in the planning window while the owner is looking
+    /// at it, and on screen otherwise (owner request, 2026-11-02).
+    var raccoonIsInWindow: Bool { isPlanningWindowOpen && isAppActive }
     /// Why the last exception request was refused.
     var exceptionError: String?
     /// The wrap-up waiting for the owner; see `AppModel+WrapUp.swift`.

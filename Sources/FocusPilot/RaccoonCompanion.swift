@@ -6,7 +6,8 @@ import SwiftUI
 /// The raccoon companion (D11, decision 0004): a borderless, transparent
 /// panel in the bottom-right corner of the chosen display showing one pose
 /// with the motion from `raccoon.json`. While the planning window is open
-/// the raccoon shows there instead (`RaccoonWindowView`).
+/// and FocusPilot is in front, the raccoon shows there instead
+/// (`RaccoonWindowView`).
 ///
 /// The panel never takes focus or clicks: it cannot become key or main,
 /// it is non-activating, and it ignores the mouse except over a speech
@@ -44,6 +45,14 @@ final class RaccoonCompanionController {
                 self?.redraw()
             }
         })
+        // In the window while FocusPilot is in front, on screen otherwise.
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            observers.append(Task { [weak model] in
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    model?.isAppActive = NSApplication.shared.isActive
+                }
+            })
+        }
         observers.append(Task { [weak self] in
             for await _ in NotificationCenter.default.notifications(named: NSApplication.didChangeScreenParametersNotification) {
                 self?.placePanel()
@@ -58,7 +67,7 @@ final class RaccoonCompanionController {
     /// Shows, changes or hides the raccoon for the current mode and session.
     func update() {
         let presence = RaccoonPresence.resolve(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
-                                               isWindowOpen: model.isPlanningWindowOpen, peek: peek)
+                                               isWindowOpen: model.raccoonIsInWindow, peek: peek)
         guard presence != shown || (presence != nil && panel == nil) else { return }
         shown = presence
         if let presence { show(presence) } else { hide() }
@@ -501,7 +510,8 @@ struct RaccoonWindowView: View {
     let model: AppModel
 
     var body: some View {
-        if let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity),
+        if model.isAppActive,
+           let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity),
            let art = model.raccoon.loadArt() {
             RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
