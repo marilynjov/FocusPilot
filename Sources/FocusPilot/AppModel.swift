@@ -41,6 +41,11 @@ final class AppModel {
     var ruleEditToConfirm: RuleEdit?
     /// Asks the planning window to show a page, e.g. Settings from ⌘,.
     var requestedPage: PlanningView.Page?
+    /// Whether the planning window is open; the raccoon shows there while
+    /// it is, and on screen while it is not.
+    var isPlanningWindowOpen = false {
+        didSet { raccoon.update() }
+    }
     /// Why the last exception request was refused.
     var exceptionError: String?
     /// The wrap-up waiting for the owner; see `AppModel+WrapUp.swift`.
@@ -75,6 +80,8 @@ final class AppModel {
     /// Pending reconcile at the quick timer's next notice.
     @ObservationIgnored var quickTimerTask: Task<Void, Never>?
     @ObservationIgnored lazy var focusPanel = FocusPanelController(model: self)
+    /// The raccoon companion window (D11); see `RaccoonCompanion.swift`.
+    @ObservationIgnored lazy var raccoon = RaccoonCompanionController(model: self)
     @ObservationIgnored lazy var appBlocker = AppBlocker(model: self)
     let loginItem = LoginItemSettings(service: MainAppLoginItem())
     let menuBarPreferences = MenuBarPreferences()
@@ -104,6 +111,9 @@ final class AppModel {
         }
         displayPreferences.applyAppearance()
         displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
+        displayPreferences.raccoonModeDidChange = { [weak self] _ in self?.raccoon.update() }
+        displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
+        raccoon.update()
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
         refreshLoginItem(on: NSApplication.didBecomeActiveNotification)
         tickWhileTimeIsShown()

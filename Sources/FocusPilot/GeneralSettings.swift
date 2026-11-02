@@ -1,7 +1,7 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Settings › General: palette and appearance, menu bar, focus panel and login.
+/// Settings › General: palette and appearance, menu bar, focus panel, raccoon and login.
 struct GeneralSettings: View {
     let model: AppModel
 
@@ -24,6 +24,26 @@ struct GeneralSettings: View {
             Section("Sessions") {
                 Toggle("Show the focus panel during sessions", isOn: $preferences.showsFocusPanel)
                     .onChange(of: preferences.showsFocusPanel) { model.focusPanel.update() }
+            }
+            Section("Raccoon companion") {
+                Picker("Raccoon", selection: $display.raccoonMode) {
+                    ForEach(RaccoonCompanionMode.allCases) { Text($0.title).tag($0) }
+                }
+                if display.raccoonMode == .staysOnScreen {
+                    Picker("Screen", selection: $display.raccoonScreen) {
+                        Text("Main display").tag(String?.none)
+                        ForEach(RaccoonScreenChoice.connected(besides: display.raccoonScreen)) { choice in
+                            Text(choice.name).tag(Optional(choice.id))
+                        }
+                    }
+                }
+                Text("While a task runs, the raccoon works in the corner of this window. When you close the window, it moves to the bottom-right corner of the screen you choose, above other windows, and clicks go through it. With Reduce Motion on, it stays still.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if display.raccoonMode != .off, let problem = model.raccoon.problem {
+                    Text(problem).font(.callout).foregroundStyle(.secondary)
+                }
             }
             Section("General") {
                 Toggle("Open at Login", isOn: Binding(
@@ -77,5 +97,24 @@ private struct PalettePreview: View {
         .background(colors.color(.bg), in: Capsule())
         .overlay(Capsule().strokeBorder(.separator))
         .accessibilityHidden(true)
+    }
+}
+
+/// A display the floating raccoon can go on, for the Screen picker.
+struct RaccoonScreenChoice: Identifiable {
+    let id: String
+    let name: String
+
+    /// The connected displays, plus `chosen` if it is disconnected, so the
+    /// picker still shows the saved choice.
+    @MainActor
+    static func connected(besides chosen: String?) -> [RaccoonScreenChoice] {
+        var choices = NSScreen.screens.compactMap { screen in
+            screen.displayUUID.map { RaccoonScreenChoice(id: $0, name: screen.localizedName) }
+        }
+        if let chosen, !choices.contains(where: { $0.id == chosen }) {
+            choices.append(RaccoonScreenChoice(id: chosen, name: "Disconnected display (using main display)"))
+        }
+        return choices
     }
 }

@@ -5,6 +5,9 @@ import FocusPilotCore
 /// keeps the latest snapshot, reconciles at the next deadline and on wake,
 /// and shows or hides the focus panel.
 extension AppModel {
+    /// Whether a focus session is running (not paused or wrapping up).
+    var isFocusing: Bool { snapshot.activeSession?.phase == .running }
+
     /// The task a new session would run on: the pinned Now task.
     var nowTask: TodayItem? {
         today.first { $0.status == .now }
@@ -29,6 +32,7 @@ extension AppModel {
                 scheduleReconcile(at: snapshot.nextDeadline)
                 scheduleQuickTimerReconcile(at: snapshot.quickTimer?.nextDeadline)
                 focusPanel.update()
+                raccoon.update()
                 // Rules name the apps the Apps line shows; every rule edit publishes a policy.
                 if snapshot.policy?.revision != policyRevision {
                     policyRevision = snapshot.policy?.revision
