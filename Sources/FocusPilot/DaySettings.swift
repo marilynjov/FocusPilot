@@ -18,6 +18,15 @@ struct DaySettings: View {
             if let error = model.dayPreferencesError {
                 Section { SettingsError(message: error) }
             }
+            if let kept = model.todayKeptHours, model.dayPreferencesError == nil {
+                Section {
+                    Label("Saved for new days. Today’s plan keeps \(DayPlanText.times(kept)) because one of its blocks is outside the new hours. Move that block, then apply.",
+                          systemImage: "info.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("Apply to Today") { Task { await model.applyWorkingHoursToToday() } }
+                }
+            }
             Section("Working hours") {
                 DatePicker("Start", selection: time($draft.workingHours.start), displayedComponents: .hourAndMinute)
                 DatePicker("End", selection: time($draft.workingHours.end), displayedComponents: .hourAndMinute)

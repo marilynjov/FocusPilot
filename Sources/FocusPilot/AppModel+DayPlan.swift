@@ -70,24 +70,32 @@ extension AppModel {
         }
     }
 
-    /// Saves the preferences, or explains why they were not saved.
+    /// Saves the preferences, or explains why they were not saved. New
+    /// working hours also go to today's plan when its blocks fit them.
     func saveDayPreferences(_ preferences: DayPreferences) async {
         guard let coordinator else { return }
         do {
             let saved = try await coordinator.saveDayPreferences(preferences, today: todayDate)
             dayPreferences = preferences
-            if case .todayKept(let hours) = saved {
-                dayPreferencesError = "Saved for new days. Today’s plan keeps \(DayPlanText.times(hours)) because a block "
-                    + "is outside the new hours; move it first to change today too."
-            } else {
-                dayPreferencesError = nil
-            }
-            await loadDayPlan()
+            dayPreferencesError = nil
+            await showSaved(saved)
         } catch DayPlanError.invalid(let problem) {
             dayPreferencesError = "Not saved: \(DayPlanText.message(problem))"
         } catch {
             dayPreferencesError = "Could not save your day settings: \(error.localizedDescription)"
         }
+    }
+
+    /// Tries the saved working hours on today's plan again, after the owner
+    /// moved the block that was outside them.
+    func applyWorkingHoursToToday() async {
+        await saveDayPreferences(dayPreferences)
+    }
+
+    private func showSaved(_ saved: DayPreferencesSave) async {
+        if case .todayKept(let hours) = saved { todayKeptHours = hours } else { todayKeptHours = nil }
+        // Only refresh a plan already shown: loading would create today's.
+        if dayPlan?.date == todayDate { await loadDayPlan() }
     }
 
     private func blockEdit(_ failure: String, on date: LocalDate,
