@@ -67,6 +67,22 @@ struct NowCard: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Changes whenever the card's session area changes height: a session
+    /// starting or ending, its phase, and the confirmations and plan
+    /// prompts `SessionControls` shows.
+    static func layoutKey(_ model: AppModel) -> String {
+        guard let session = model.snapshot.activeSession else { return "none" }
+        let phase = switch session.phase {
+        case .running: "running"
+        case .paused: "paused"
+        case .onBreak: "break"
+        case .ended: "ended"
+        }
+        return [session.id.uuidString, phase, "\(model.snapshot.earlyEndAvailableAt != nil)",
+                "\(model.isConfirmingEarlyEnd)", "\(model.task(session.taskID)?.wrapUp != nil)",
+                "\(model.snapshot.planRun != nil)"].joined(separator: "|")
+    }
+
     /// Start focus, or the session already running.
     @ViewBuilder
     private func session(for item: TodayItem, _ model: AppModel) -> some View {

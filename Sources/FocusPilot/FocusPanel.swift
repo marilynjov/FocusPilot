@@ -41,7 +41,14 @@ final class FocusPanelController {
         let host = NSHostingView(rootView: FocusPanelView(model: model).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
-        if !panel.setFrameUsingName("FocusPanel"), let screen = NSScreen.main?.visibleFrame {
+        if panel.setFrameUsingName("FocusPanel") {
+            // Keep only the saved place: a saved size can be too small for
+            // the time and task now shown, which cut the pill off.
+            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            panel.setContentSize(host.fittingSize)
+            panel.setFrameTopLeftPoint(top)
+        } else if let screen = NSScreen.main?.visibleFrame {
+            panel.setContentSize(host.fittingSize)
             panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
         panel.setFrameAutosaveName("FocusPanel")
