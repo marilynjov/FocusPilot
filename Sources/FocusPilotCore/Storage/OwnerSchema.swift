@@ -294,6 +294,8 @@ enum OwnerSchema {
                 table.check(sql: "(endedAt IS NULL) = (outcome IS NULL)")
             }
             try db.create(index: "quickTimer_on_startedAt", on: QuickTimerRow.databaseTableName, columns: ["startedAt"])
+            // At most one running timer.
+            try db.execute(sql: "CREATE UNIQUE INDEX quickTimer_one_running ON quickTimer(endedAt IS NULL) WHERE endedAt IS NULL")
         }
         return migrator
     }

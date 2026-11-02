@@ -59,8 +59,11 @@ public struct QuickTimer: Equatable, Sendable, Identifiable {
 
     public var plannedLength: TimeInterval { plannedEnd.timeIntervalSince(startedAt) }
 
-    /// From start to Finish, Stop or the unattended close; `nil` while running.
-    public var actualLength: TimeInterval? { endedAt.map { $0.timeIntervalSince(startedAt) } }
+    /// From start to Finish or Stop; `nil` while running and for an
+    /// `expired` timer, whose real length nobody saw.
+    public var actualLength: TimeInterval? {
+        outcome == .expired ? nil : endedAt.map { $0.timeIntervalSince(startedAt) }
+    }
 
     /// Time to the planned end; negative once it is past.
     public func remaining(at now: Date) -> TimeInterval {
@@ -77,19 +80,21 @@ public struct QuickTimer: Equatable, Sendable, Identifiable {
     }
 
     /// The timer at `now` and the notices due. After a sleep past the end,
-    /// only the end is announced; "2 minutes left" is no longer news.
+    /// only the end is announced; "2 minutes left" is no longer news. Past
+    /// the unattended limit the timer is closed with no notice at all:
+    /// "Time's up" the next morning would be about something long over.
     public func reconciled(at now: Date) -> (QuickTimer, [FocusNotice]) {
         guard isRunning else { return (self, []) }
         var timer = self
         var notices: [FocusNotice] = []
-        if now >= plannedEnd {
+        let cutoff = plannedEnd.addingTimeInterval(Self.unattendedLimit)
+        if now >= cutoff {
+            timer.notified = .up
+            timer.endedAt = cutoff
+            timer.outcome = .expired
+        } else if now >= plannedEnd {
             if notified < .up { notices.append(.quickTimerUp(label: label)) }
             timer.notified = .up
-            let cutoff = plannedEnd.addingTimeInterval(Self.unattendedLimit)
-            if now >= cutoff {
-                timer.endedAt = cutoff
-                timer.outcome = .expired
-            }
         } else if notified < .almostUp, plannedLength > Self.warning, now >= plannedEnd.addingTimeInterval(-Self.warning) {
             notices.append(.quickTimerAlmostUp(label: label))
             timer.notified = .almostUp

@@ -38,10 +38,13 @@ extension FocusCoordinator {
         do {
             try await repository.saveQuickTimer(reconciled)
         } catch QuickTimerError.notRunning {
-            // Ended by the owner while this waited; nothing left to announce.
+            // Ended elsewhere while this waited; nothing left to announce.
+            if quickTimer?.id == timer.id { quickTimer = nil }
+            await broadcast()
             return
         } catch {
-            if quickTimer?.id == reconciled.id || quickTimer == nil { quickTimer = timer }
+            // Put it back only if nothing replaced or ended it meanwhile.
+            if reconciled.isRunning ? quickTimer == reconciled : quickTimer == nil { quickTimer = timer }
             throw error
         }
         for notice in notices {

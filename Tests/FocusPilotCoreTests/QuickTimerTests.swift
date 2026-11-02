@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import FocusPilotCore
 
@@ -52,7 +53,15 @@ struct QuickTimerTests {
 
         #expect(closed.outcome == .expired)
         #expect(closed.endedAt == at(minutes: 80))
+        #expect(closed.actualLength == nil)
         #expect(closed.nextDeadline == nil)
+    }
+
+    @Test func closingAnUnattendedTimerAnnouncesNothing() {
+        let (closed, notices) = timer(minutes: 20).reconciled(at: at(minutes: 12 * 60))
+
+        #expect(closed.outcome == .expired)
+        #expect(notices.isEmpty)
     }
 
     @Test func labelsAreTrimmedAndEmptyMeansNone() {
@@ -204,7 +213,9 @@ struct QuickTimerTests {
         #expect(await relaunched.snapshot().quickTimer == nil)
         let recorded = try #require(try await relaunched.repository.quickTimers().first)
         #expect(recorded.outcome == .expired)
-        #expect(abs(try #require(recorded.actualLength) - 80 * 60) < 0.01) // dates are stored to the millisecond
+        #expect(recorded.endedAt == at(minutes: 80))
+        #expect(recorded.actualLength == nil)
+        #expect(await fixture.notices.delivered.isEmpty)
     }
 
     @Test func finishingPastTheUnattendedLimitKeepsItExpired() async throws {
@@ -226,6 +237,66 @@ struct QuickTimerTests {
         try await fixture.coordinator.repository.clearCaches()
 
         #expect(try await TaskRepository(location: fixture.location).quickTimers().map(\.label) == ["Kept"])
+    }
+
+    @Test func stoppingThenStartingAgainGivesTheNewTimerItsOwnNotices() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startQuickTimer(minutes: 10, label: "First")
+        fixture.advance(minutes: 8)
+        try await fixture.coordinator.reconcileQuickTimer()
+        try await fixture.coordinator.stopQuickTimer()
+
+        try await fixture.coordinator.startQuickTimer(minutes: 10, label: "Second")
+        fixture.advance(minutes: 8)
+        try await fixture.coordinator.reconcileQuickTimer()
+
+        #expect(await fixture.notices.delivered == [.quickTimerAlmostUp(label: "First"), .quickTimerAlmostUp(label: "Second")])
+    }
+
+    @Test func aClockSetBackNeverRecordsANegativeLength() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startQuickTimer(minutes: 20, label: nil)
+        fixture.clock.set(at(minutes: -30))
+
+        try await fixture.coordinator.finishQuickTimer()
+
+        let recorded = try #require(try await fixture.coordinator.repository.quickTimers().first)
+        #expect(try #require(recorded.actualLength) >= 0)
+    }
+
+    @Test func concurrentReconcilesDeliverEachNoticeOnce() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startQuickTimer(minutes: 10, label: nil)
+        fixture.advance(minutes: 10)
+
+        async let first: Void = fixture.coordinator.reconcileQuickTimer()
+        async let second: Void = fixture.coordinator.reconcileQuickTimer()
+        async let third: Void = fixture.coordinator.reconcileQuickTimer()
+        _ = try await (first, second, third)
+
+        #expect(await fixture.notices.delivered == [.quickTimerUp(label: nil)])
+    }
+
+    @Test func theDatabaseHoldsOneRunningTimerAndAnOutcomeOnlyWithAnEnd() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startQuickTimer(minutes: 10, label: nil)
+        let database = try DatabaseQueue(path: fixture.location.ownerDatabaseURL.path)
+
+        #expect(throws: DatabaseError.self) {
+            try database.write { db in
+                try db.execute(sql: "INSERT INTO quickTimer (startedAt, plannedEnd) VALUES ('2026-10-14 15:00:00.000', '2026-10-14 15:10:00.000')")
+            }
+        }
+        #expect(throws: DatabaseError.self) {
+            try database.write { db in
+                try db.execute(sql: "UPDATE quickTimer SET outcome = 'finished'")
+            }
+        }
+        #expect(throws: DatabaseError.self) {
+            try database.write { db in
+                try db.execute(sql: "INSERT INTO quickTimer (startedAt, plannedEnd, endedAt, outcome) VALUES ('2026-10-14 15:00:00.000', '2026-10-14 15:10:00.000', '2026-10-14 15:05:00.000', 'paused')")
+            }
+        }
     }
 
     @Test func aTimerRunsAlongsideAFocusSessionWithoutTouchingIt() async throws {
