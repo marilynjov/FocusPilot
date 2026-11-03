@@ -24,8 +24,8 @@ struct GeneralSettings: View {
             Section("Sessions") {
                 Toggle("Show the focus panel during sessions", isOn: $preferences.showsFocusPanel)
                     .onChange(of: preferences.showsFocusPanel) { model.focusPanel.update() }
-                    .disabled(display.raccoonMode == .staysOnScreen)
-                if display.raccoonMode == .staysOnScreen {
+                    .disabled(display.raccoonMode == .staysOnScreen && model.raccoon.problem == nil)
+                if display.raccoonMode == .staysOnScreen && model.raccoon.problem == nil {
                     Text("The raccoon stands in for the focus panel: click it to open the panel.")
                         .font(.callout)
                         .foregroundStyle(.secondary)

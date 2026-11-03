@@ -33,6 +33,9 @@ final class RaccoonCompanionController {
     private var shown: RaccoonPresence?
     /// Whether the pointer is over the floating raccoon or its bubble.
     private var isHovered = false
+    /// Ticks the time in the hover bubble while the pointer is over the
+    /// raccoon.
+    private var hoverTimer: Timer?
     private var peekTask: Task<Void, Never>?
     private var observers: [Task<Void, Never>] = []
 
@@ -77,6 +80,12 @@ final class RaccoonCompanionController {
 
     /// Why the art could not be loaded, if it could not.
     var problem: String? { artError }
+
+    /// Whether the raccoon replaces the focus panel: in On screen mode, and
+    /// only while its art loads, so the panel is never lost with it.
+    var standsInForFocusPanel: Bool {
+        model.displayPreferences.raccoonMode == .staysOnScreen && problem == nil
+    }
 
     /// Shows, changes or hides the raccoon for the current mode and session.
     func update() {
@@ -142,7 +151,7 @@ final class RaccoonCompanionController {
         panel?.orderOut(nil)
         panel = nil
         stage = nil
-        isHovered = false
+        setHovered(false)
         model.focusPanel.update()
     }
 
@@ -150,7 +159,25 @@ final class RaccoonCompanionController {
     /// the raccoon (owner request, 2026-11-02), else no bubble.
     private func refreshBubble() {
         let message = shown?.message ?? (isHovered ? hoverText : nil)
-        if stage?.bubbleMessage != message { stage?.setBubble(message) }
+        if stage?.bubbleMessage != message {
+            stage?.setBubble(message, toolTip: model.raccoonPeek != nil ? "Click to dismiss" : "Click to show the focus panel")
+        }
+    }
+
+    /// Follows the pointer onto and off the raccoon, ticking the hover
+    /// bubble's time once a second only while it is there.
+    private func setHovered(_ hovered: Bool) {
+        isHovered = hovered
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        if hovered {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshBubble() }
+            }
+            timer.tolerance = 0.1
+            RunLoop.main.add(timer, forMode: .common)
+            hoverTimer = timer
+        }
     }
 
     private var hoverText: String? {
@@ -197,7 +224,7 @@ final class RaccoonCompanionController {
         self.stage = stage
         panel.followMouse { [weak self] hovered in
             guard let self else { return }
-            isHovered = hovered
+            setHovered(hovered)
             refreshBubble()
         }
         return panel
@@ -213,6 +240,7 @@ final class RaccoonCompanionController {
         let visible = screen.visibleFrame
         let size = panel.frame.size
         panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - Self.margin, y: visible.minY + Self.margin))
+        model.focusPanel.moveAboveRaccoon(panel.frame)
     }
 }
 
@@ -236,35 +264,59 @@ extension NSScreen {
 /// A panel that never becomes key or main, and lets clicks through except
 /// over the speech bubble.
 final class RaccoonPanel: NSPanel {
+    /// Within this distance of the panel the pointer is polled quickly, so
+    /// the raccoon takes the mouse in time; farther away, slowly, so App Nap
+    /// can still save power.
+    private static let nearDistance: CGFloat = 150
+    private static let nearInterval: TimeInterval = 0.05
+    private static let farInterval: TimeInterval = 0.25
+
     private var mouseTimer: Timer?
+    private var onHover: (@MainActor (Bool) -> Void)?
+    private var isHovered = false
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     /// Takes the mouse only while it is over the raccoon or its bubble, and
-    /// reports `hovered` on every check (the bubble's time changes while
-    /// hovered). Polled, since an ignoring window gets no events; nil stops.
+    /// reports `hovered` when that changes. Polled, since an ignoring window
+    /// gets no events; nil stops.
     func followMouse(_ hovered: (@MainActor (Bool) -> Void)?) {
         mouseTimer?.invalidate()
         mouseTimer = nil
         ignoresMouseEvents = true
-        guard let hovered else { return }
-        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let over = self.isMouseOverContent
-                self.ignoresMouseEvents = !over
-                hovered(over)
-            }
+        isHovered = false
+        onHover = hovered
+        guard hovered != nil else { return }
+        poll(every: Self.farInterval)
+    }
+
+    private func poll(every interval: TimeInterval) {
+        mouseTimer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkMouse() }
         }
+        timer.tolerance = interval / 5
         RunLoop.main.add(timer, forMode: .common)
         mouseTimer = timer
+    }
+
+    private func checkMouse() {
+        let over = isMouseOverContent
+        ignoresMouseEvents = !over
+        if over != isHovered {
+            isHovered = over
+            onHover?(over)
+        }
+        let isNear = frame.insetBy(dx: -Self.nearDistance, dy: -Self.nearDistance).contains(NSEvent.mouseLocation)
+        let interval = isNear ? Self.nearInterval : Self.farInterval
+        if mouseTimer?.timeInterval != interval { poll(every: interval) }
     }
 
     private var isMouseOverContent: Bool {
         guard let stage = contentView as? RaccoonStageView else { return false }
         let mouse = NSEvent.mouseLocation
-        return [stage.poseFrame, stage.bubbleFrame].compactMap(\.self).contains {
+        return [stage.raccoonHitFrame, stage.bubbleFrame].compactMap(\.self).contains {
             convertToScreen(stage.convert($0, to: nil)).contains(mouse)
         }
     }
@@ -312,7 +364,7 @@ final class RaccoonStageView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         if let bubble, bubble.frame.contains(local) { return bubble }
-        if onRaccoonClick != nil, poseFrame.contains(local) { return self }
+        if onRaccoonClick != nil, raccoonHitFrame.contains(local) { return self }
         return nil
     }
 
@@ -320,6 +372,9 @@ final class RaccoonStageView: NSView {
     var bubbleMessage: String? { bubble?.message }
     /// Where the raccoon is drawn, in this view's coordinates.
     var poseFrame: NSRect { poseLayer.frame }
+    /// The part of `poseFrame` that takes the pointer: inset 15% on each
+    /// side, so clicks just around the raccoon pass through.
+    var raccoonHitFrame: NSRect { poseFrame.insetBy(dx: poseFrame.width * 0.15, dy: poseFrame.height * 0.15) }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -340,7 +395,8 @@ final class RaccoonStageView: NSView {
         RaccoonRig(pose: pose, images: layers, motions: motions, frameSize: frameSize, animates: !reduceMotion)
             .build(into: poseLayer)
         CATransaction.commit()
-        setAccessibilityLabel("Raccoon companion: \(pose.name)")
+        setAccessibilityLabel(onRaccoonClick != nil ? "Raccoon companion, \(pose.name). Shows the focus panel"
+                                                    : "Raccoon companion, \(pose.name)")
         if onRaccoonClick != nil {
             setAccessibilityRole(.button)
             setAccessibilityHelp("Shows or hides the focus panel")
@@ -355,9 +411,10 @@ final class RaccoonStageView: NSView {
 
     /// Shows `message` in the bubble. A bubble already shown changes its
     /// text in place, so the time ticking while hovered does not redraw it.
-    func setBubble(_ message: String?) {
+    func setBubble(_ message: String?, toolTip: String? = nil) {
         if let message, let bubble {
             bubble.setMessage(message)
+            bubble.toolTip = toolTip
             bubble.setFrameOrigin(bubbleOrigin(width: bubble.frame.width))
             return
         }
@@ -366,6 +423,7 @@ final class RaccoonStageView: NSView {
         if let message {
             let view = RaccoonBubbleView(message: message, maxWidth: bounds.width)
             view.setFrameOrigin(bubbleOrigin(width: view.frame.width))
+            view.toolTip = toolTip
             view.onClick = { [weak self] in self?.onBubbleClick?() }
             addSubview(view)
             bubble = view
