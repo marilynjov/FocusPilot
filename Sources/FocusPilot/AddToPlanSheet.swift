@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The one way to add to Today's plan (#29): a new task, typed and read
 /// like quick capture ("Write NLP report by Friday 5pm"), an open task from
-/// the list, or a break, with a start and a length. A new task and its block
+/// the list, or a break, from one time to another. A new task and its block
 /// are saved together, and the task joins the task list too. The plan's
 /// rules are checked on save; an overlap with a fixed block asks first.
 struct AddToPlanSheet: View {
@@ -39,7 +39,6 @@ struct AddToPlanSheet: View {
         }
     }
 
-    static let lengths = [15, 30, 45, 60, 90, 120, 180, 240]
 
     let model: AppModel
     private let date: LocalDate
@@ -81,11 +80,11 @@ struct AddToPlanSheet: View {
                 case .breakTime: EmptyView()
                 }
                 Section {
-                    DatePicker("Start", selection: startDate, displayedComponents: .hourAndMinute)
-                    Picker("Length", selection: $minutes) {
-                        ForEach(lengthChoices, id: \.self) { Text(Self.lengthText($0)).tag($0) }
-                    }
-                    LabeledContent("Ends", value: DayPlanText.time(block.end))
+                    // From and To, with the length worked out (owner request,
+                    // 2026-11-02). Changing From keeps the length.
+                    DatePicker("From", selection: startDate, displayedComponents: .hourAndMinute)
+                    DatePicker("To", selection: endDate, displayedComponents: .hourAndMinute)
+                    LabeledContent("Length", value: Self.lengthText(block.span.minutes))
                 }
             }
             .formStyle(.grouped)
@@ -160,10 +159,6 @@ struct AddToPlanSheet: View {
         return choices
     }
 
-    private var lengthChoices: [Int] {
-        Self.lengths.contains(minutes) ? Self.lengths : (Self.lengths + [minutes]).sorted()
-    }
-
     /// "45 min", "1 hr", "1 hr 30 min".
     static func lengthText(_ minutes: Int) -> String {
         let (hours, rest) = (minutes / 60, minutes % 60)
@@ -211,6 +206,22 @@ struct AddToPlanSheet: View {
         case .needsConfirmation(let blocks): overlapping = blocks
         case .failed: break
         }
+    }
+
+    /// The end as a Date for the picker. Setting it sets the length; an end
+    /// at or before From leaves the block 5 minutes long.
+    private var endDate: Binding<Date> {
+        Binding(
+            get: { Self.date(block.end) },
+            set: {
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: $0)
+                minutes = max((parts.hour ?? 0) * 60 + (parts.minute ?? 0) - start.minutes, 5)
+            }
+        )
+    }
+
+    private static func date(_ time: ClockTime) -> Date {
+        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: .now) ?? .now
     }
 
     /// The start as a Date on today's date in this Mac's zone, for the picker.
