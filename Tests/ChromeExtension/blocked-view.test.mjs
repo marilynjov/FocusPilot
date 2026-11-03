@@ -248,3 +248,11 @@ test("arrow keys move through a radio group", () => {
   assert.equal(next(0, 3, "Tab"), null);
   assert.equal(next(0, 3, "a"), null);
 });
+
+// A paused strict session keeps blocking with its countdown standing still
+// (owner decision, 2026-11-02).
+test("a paused strict session shows the time left standing still", () => {
+  const paused = { ...session("strict"), pausedSince: "2026-10-14T15:00:00Z" };
+  const m = view(delivery({ session: paused, focus }), "https://youtube.com/");
+  assert.equal(m.status.text, "Focus session paused · 51:00 left");
+});

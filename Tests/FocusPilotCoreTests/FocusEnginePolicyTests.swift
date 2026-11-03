@@ -25,10 +25,11 @@ struct FocusEnginePolicyTests {
 
         let interrupted = try FocusEngine.handle(interruption, session: running, at: clock.now)
 
-        // A break moves the end later by its length as it starts; a pause
-        // only when it ends.
-        let end = interruption == .pause ? running.plannedEnd : clock.minutes(from: running.plannedEnd, 5)
-        #expect(publishedPolicy(interrupted) == .some(SessionPolicy(sessionID: running.id, mode: .strict, end: end)))
+        // A pause also tells extensions when it began, so they show the
+        // time left standing still.
+        let pausedSince = interruption == .pause ? clock.now : nil
+        #expect(publishedPolicy(interrupted) == .some(SessionPolicy(sessionID: running.id, mode: .strict, end: running.plannedEnd,
+                                                                    pausedSince: pausedSince)))
     }
 
     @Test mutating func normalSessionsLiftSessionRulesWhilePaused() throws {
@@ -50,7 +51,7 @@ struct FocusEnginePolicyTests {
 
         let breakEnd = clock.minutes(from: clock.now, 5)
         #expect(publishedPolicy(onBreak) == .some(SessionPolicy(
-            sessionID: running.id, mode: .normal, end: clock.minutes(from: running.plannedEnd, 5), resumesAt: breakEnd
+            sessionID: running.id, mode: .normal, end: running.plannedEnd, resumesAt: breakEnd
         )))
     }
 
@@ -74,8 +75,7 @@ struct FocusEnginePolicyTests {
 
         let transition = try FocusEngine.handle(.reconcile, session: onBreak, at: clock.now)
 
-        #expect(publishedPolicy(transition) == .some(SessionPolicy(sessionID: running.id, mode: .strict,
-                                                                   end: clock.minutes(from: running.plannedEnd, 5))))
+        #expect(publishedPolicy(transition) == .some(SessionPolicy(sessionID: running.id, mode: .strict, end: running.plannedEnd)))
         #expect(transition.effects.last == .notify(.breakEnded))
     }
 }

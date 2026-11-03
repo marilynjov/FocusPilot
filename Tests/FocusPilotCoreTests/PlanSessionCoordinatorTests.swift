@@ -164,6 +164,8 @@ struct PlanSessionCoordinatorTests {
         try await fixture.coordinator.reconcile()
         #expect(await fixture.coordinator.snapshot().activeSession?.phase == .running)
         #expect(await fixture.publisher.published.last?.session?.resumesAt == nil)
+        // The plan set lunch aside, so the session still ends with its block.
+        #expect(await fixture.coordinator.snapshot().activeSession?.plannedEnd == at("13:30"))
     }
 
     @Test func editingThePlanMakesItADraftThatStartsNothing() async throws {

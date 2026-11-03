@@ -31,7 +31,7 @@ public struct SessionText: Sendable {
         }
     }
 
-    /// "24:08" to the planned end, which pauses never move.
+    /// "24:08" of focus time left; it stands still while paused.
     public func timeLeft(at now: Date) -> String {
         MenuBarStatus.format(remaining: session.remaining(at: now))
     }

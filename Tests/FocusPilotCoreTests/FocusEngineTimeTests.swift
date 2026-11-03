@@ -61,7 +61,7 @@ struct FocusEngineTimeTests {
         #expect(resumed.phase == .running)
         #expect(transition.effects == [
             .persist(resumed),
-            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: clock.minutes(from: running.plannedEnd, 5))),
+            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: running.plannedEnd)),
             .notify(.breakEnded),
         ])
     }
@@ -75,9 +75,7 @@ struct FocusEngineTimeTests {
         let transition = try FocusEngine.handle(.endBreak, session: onBreak, at: clock.now)
 
         #expect(transition.session?.phase == .running)
-        var later = running
-        later.plannedEnd = clock.minutes(from: running.plannedEnd, 2)
-        #expect(transition.effects.last == .publishPolicy(FocusEngine.policy(for: later)))
+        #expect(transition.effects.last == .publishPolicy(FocusEngine.policy(for: running)))
     }
 
     @Test mutating func sleepingThroughABreakAndThePlannedEndOnlyReportsTheEnd() throws {
@@ -88,10 +86,9 @@ struct FocusEngineTimeTests {
 
         let transition = try FocusEngine.handle(.reconcile, session: onBreak, at: clock.now)
 
-        // Both deadlines were crossed: the break ended at minute 23, the
-        // session at 28, since the break moved its end 3 minutes later.
+        // Both deadlines were crossed: the break ended at minute 23, the session at 25.
         let ended = try #require(transition.session)
-        #expect(ended.phase == .ended(at: clock.minutes(from: running.plannedEnd, 3), reason: .reachedPlannedEnd))
+        #expect(ended.phase == .ended(at: running.plannedEnd, reason: .reachedPlannedEnd))
         #expect(transition.effects == [.persist(ended), .publishPolicy(nil), .notify(.sessionReachedPlannedEnd)])
     }
 
@@ -112,17 +109,17 @@ struct FocusEngineTimeTests {
         #expect(resumed.remaining(at: clock.now) == 15 * 60)
     }
 
-    @Test mutating func aBreakStopsTheCountdownAndEndingItEarlyGivesTheRestBack() throws {
+    /// Breaks come from the day plan, which already set their time aside.
+    @Test mutating func aBreakKeepsThePlannedEnd() throws {
         let running = try start(minutes: 50)
         clock.advance(minutes: 20)
         let onBreak = try #require(FocusEngine.handle(.startBreak(duration: 10 * 60), session: running, at: clock.now).session)
-        #expect(onBreak.plannedEnd == clock.minutes(from: running.plannedEnd, 10))
+        #expect(onBreak.plannedEnd == running.plannedEnd)
         clock.advance(minutes: 4)
-        #expect(onBreak.remaining(at: clock.now) == 30 * 60)
+        #expect(onBreak.remaining(at: clock.now) == 26 * 60)
 
         let back = try #require(FocusEngine.handle(.endBreak, session: onBreak, at: clock.now).session)
-        #expect(back.plannedEnd == clock.minutes(from: running.plannedEnd, 4))
-        #expect(back.remaining(at: clock.now) == 30 * 60)
+        #expect(back.plannedEnd == running.plannedEnd)
     }
 
     @Test mutating func anEventArrivingAfterAMissedPlannedEndIsJudgedAgainstTheEndedSession() throws {
@@ -134,7 +131,7 @@ struct FocusEngineTimeTests {
         }
     }
 
-    @Test mutating func theNextDeadlineIsTheBreakEndDuringABreak() throws {
+    @Test mutating func theNextDeadlineIsTheEarlierOfBreakEndAndPlannedEnd() throws {
         let running = try start(minutes: 25)
         #expect(running.nextDeadline == running.plannedEnd)
 
@@ -143,7 +140,7 @@ struct FocusEngineTimeTests {
         #expect(shortBreak?.nextDeadline == clock.minutes(from: clock.now, 5))
 
         let longBreak = try FocusEngine.handle(.startBreak(duration: 60 * 60), session: running, at: clock.now).session
-        #expect(longBreak?.nextDeadline == clock.minutes(from: clock.now, 60))
+        #expect(longBreak?.nextDeadline == running.plannedEnd)
 
         let ended = try FocusEngine.handle(.complete, session: running, at: clock.now).session
         #expect(ended?.nextDeadline == nil)
@@ -160,7 +157,7 @@ struct FocusEngineTimeTests {
         #expect(resumed.phase == .running)
         #expect(transition.effects == [
             .persist(resumed),
-            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: clock.minutes(from: running.plannedEnd, 5))),
+            .publishPolicy(SessionPolicy(sessionID: running.id, mode: .normal, end: running.plannedEnd)),
             .notify(.breakEnded),
         ])
     }

@@ -71,13 +71,13 @@ public struct FocusSession: Codable, Equatable, Sendable {
         }
     }
 
-    /// Focus time left at `now`. It stands still while paused or on a
-    /// break, since those move `plannedEnd` later (owner decision, 2026-11-02).
+    /// Focus time left at `now`. It stands still while paused, since
+    /// resuming moves `plannedEnd` later (owner decision, 2026-11-02).
     public func remaining(at now: Date) -> TimeInterval {
         switch phase {
         case .running: plannedEnd.timeIntervalSince(now)
         case .paused(let since): plannedEnd.timeIntervalSince(since)
-        case .onBreak(let until): plannedEnd.timeIntervalSince(max(until, now))
+        case .onBreak: plannedEnd.timeIntervalSince(now)
         case .ended: 0
         }
     }
