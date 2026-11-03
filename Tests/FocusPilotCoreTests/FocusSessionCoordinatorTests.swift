@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import FocusPilotCore
 
@@ -157,6 +158,38 @@ struct FocusSessionCoordinatorTests {
         #expect(next.action == first.action)
         #expect(next.mode == .strict)
         #expect(next.plannedEnd == fixture.clock.now.addingTimeInterval(10 * 60))
+    }
+
+    @Test(arguments: ["UPDATE task SET status = 'done' WHERE id = ?", "DELETE FROM task WHERE id = ?"])
+    func keepGoingNeedsTheTaskStillOpen(change: String) async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await DatabaseQueue(path: fixture.location.ownerDatabaseURL.path).write { db in
+            try db.execute(sql: change, arguments: [first.taskID])
+        }
+
+        await #expect(throws: FocusCoordinator.SessionError.noCurrentTask) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
+        }
+        #expect(await fixture.coordinator.snapshot().activeSession == nil)
+    }
+
+    @Test func keepGoingUsesTheTasksCurrentTitle() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await DatabaseQueue(path: fixture.location.ownerDatabaseURL.path).write { db in
+            try db.execute(sql: "UPDATE task SET title = 'Explain the results' WHERE id = ?", arguments: [first.taskID])
+        }
+
+        try await fixture.coordinator.keepGoing(duration: 10 * 60)
+
+        #expect(await fixture.coordinator.snapshot().activeSession?.action == "Explain the results")
     }
 
     @Test func keepGoingNeedsASessionFirst() async throws {

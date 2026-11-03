@@ -8,6 +8,8 @@ public enum PlanRunChange: Sendable, Equatable {
     case breakStarted(sessionID: UUID, breakID: Int64)
     /// Applies only when the session is a block's.
     case endedEarly(sessionID: UUID, at: Date)
+    /// "+10 min" on a block's session notes that it needed more time.
+    case moreTimeRequested(sessionID: UUID, at: Date)
 }
 
 /// Runs of approved plan blocks (D3). Owner data, like the plan itself.
@@ -41,6 +43,13 @@ extension TaskRepository {
         }
     }
 
+    /// The task `taskID` unless it was deleted or is done.
+    public func openTask(_ taskID: Int64) async throws -> TaskRecord? {
+        try await ownerDatabase.read { db in
+            try TaskRecord.filter(Column("id") == taskID && Column("status") != TaskStatus.done.rawValue).fetchOne(db)
+        }
+    }
+
     static func apply(_ change: PlanRunChange, _ db: Database) throws {
         switch change {
         case .started(let run, let date, let taskID):
@@ -54,6 +63,9 @@ extension TaskRepository {
             try row.update(db)
         case .endedEarly(let sessionID, let at):
             try db.execute(sql: "UPDATE planRun SET endedEarlyAt = ? WHERE sessionId = ? AND endedEarlyAt IS NULL",
+                           arguments: [at, sessionID.uuidString])
+        case .moreTimeRequested(let sessionID, let at):
+            try db.execute(sql: "UPDATE planRun SET moreTimeRequestedAt = ? WHERE sessionId = ?",
                            arguments: [at, sessionID.uuidString])
         }
     }

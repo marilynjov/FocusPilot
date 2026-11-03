@@ -193,6 +193,23 @@ struct PlanSessionCoordinatorTests {
         #expect(snapshot.activeSession?.plannedEnd == at("11:10"))
         #expect(snapshot.activePlanRun?.moreTimeRequestedAt == at("10:00"))
         #expect(await fixture.publisher.published.last?.session?.end == at("11:10"))
+        let stored = try await fixture.coordinator.repository.planToFollow(on: today).runs
+        #expect(stored.map(\.moreTimeRequestedAt) == [at("10:00")])
+    }
+
+    @Test func moreTimeRefusedNotesNothing() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (9, 30), to: (11, 0))
+
+        // The note goes in the same write as the session, so a refused
+        // extension leaves no note behind.
+        await #expect(throws: FocusEngineError.nonPositiveDuration) {
+            try await fixture.coordinator.extend(by: 0)
+        }
+
+        let stored = try await fixture.coordinator.repository.planToFollow(on: today).runs
+        #expect(stored.map(\.moreTimeRequestedAt) == [nil])
+        #expect(await fixture.coordinator.snapshot().activePlanRun?.moreTimeRequestedAt == nil)
     }
 
     @Test func theRaccoonReadsTodaysPlanWithoutCreatingOne() async throws {

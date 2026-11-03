@@ -42,21 +42,29 @@ extension FocusCoordinator {
 
     /// "+10 min": moves the planned end later, while running, paused or on
     /// a break (owner request, 2026-11-02). On a plan block's session it
-    /// also notes that the block needed more time (D3), as "I need more
-    /// time" does, for replanning (D10).
+    /// also notes, in the same write, that the block needed more time (D3),
+    /// as "I need more time" does, for replanning (D10).
     public func extend(by interval: TimeInterval) async throws {
-        try await handle(.extend(by: interval))
+        var planChange: PlanRunChange?
         if let active = session, !active.hasEnded, planRun?.sessionID == active.id {
-            planRun = try await repository.requestMoreTime(for: active.id)
+            planChange = .moreTimeRequested(sessionID: active.id, at: now())
+        }
+        try await handle(.extend(by: interval), planChange: planChange)
+        if let active = session, planChange != nil {
+            planRun = try await repository.planRun(for: active.id)
             await broadcast()
         }
     }
 
     /// "Keep going" once a session has ended: a new session on the same
-    /// task, in the same mode, for `duration` (owner request, 2026-11-02).
+    /// task, under its current title and in the same mode, for `duration`
+    /// (owner request, 2026-11-02). A task deleted or done since has nothing
+    /// to keep going on.
     public func keepGoing(duration: TimeInterval) async throws {
-        guard let last = session else { throw SessionError.noCurrentTask }
-        try await handle(.start(SessionRequest(id: UUID(), taskID: last.taskID, action: last.action, mode: last.mode,
+        guard let last = session, let task = try await repository.openTask(last.taskID) else {
+            throw SessionError.noCurrentTask
+        }
+        try await handle(.start(SessionRequest(id: UUID(), taskID: last.taskID, action: task.title, mode: last.mode,
                                                duration: duration)))
     }
 

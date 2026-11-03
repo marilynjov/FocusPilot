@@ -46,11 +46,12 @@ struct RaccoonMomentsTests {
         PlanRun(blockID: blockID, sessionID: sessionID, startedAt: at(start), breaksStarted: breaksStarted)
     }
 
-    private func next(_ mode: RaccoonCompanionMode = .staysOnScreen, session: FocusSession? = nil, plan: DayPlan? = nil,
-                      runs: [PlanRun] = [], blockedVisitAt: Date? = nil, shown: [RaccoonMoment.ID: Date] = [:],
-                      at time: String) -> RaccoonMoment? {
-        RaccoonMoments.next(mode: mode, session: session, plan: plan, runs: runs, blockedVisitAt: blockedVisitAt,
-                            shown: shown, at: at(time), timeZone: bogota, locale: britishEnglish)
+    private func next(_ mode: RaccoonCompanionMode = .staysOnScreen, session: FocusSession? = nil,
+                      extended: TimeInterval = 0, plan: DayPlan? = nil, runs: [PlanRun] = [], blockedVisitAt: Date? = nil,
+                      shown: [RaccoonMoment.ID: Date] = [:], at time: String) -> RaccoonMoment? {
+        RaccoonMoments.next(mode: mode, session: session, extended: extended, plan: plan, runs: runs,
+                            blockedVisitAt: blockedVisitAt, shown: shown, at: at(time), timeZone: bogota,
+                            locale: britishEnglish)
     }
 
     // MARK: Modes
@@ -77,24 +78,33 @@ struct RaccoonMomentsTests {
 
         #expect(next(session: running, at: "10:49") == nil)
         let moment = try #require(next(session: running, at: "10:50"))
-        #expect(moment.id == RaccoonMoment.ID(.endWarning, sessionID.uuidString))
+        #expect(moment.id == RaccoonMoment.ID(.endWarning, "\(sessionID.uuidString)-0"))
         #expect(moment.peek == RaccoonPeek(poseID: "peek", message: "10 minutes left", actions: [.gotIt, .extend(minutes: 10)]))
-        #expect(moment.duration == 8)
+        #expect(moment.duration == 20, "Buttons give time to choose")
         #expect(moment.sessionID == sessionID)
         // Still due a little later, e.g. after the Mac woke, saying what is left.
         #expect(next(session: running, at: "10:53")?.peek.message == "7 minutes left")
     }
 
-    @Test func aSessionPlannedShorterThanTwentyMinutesIsWarnedTwoMinutesBefore() throws {
-        let short = session(from: "10:00", to: "10:15")
+    @Test func aSessionPlannedShorterThanFifteenMinutesIsWarnedTwoMinutesBefore() throws {
+        let short = session(from: "10:00", to: "10:10")
 
-        #expect(next(session: short, at: "10:05") == nil)
-        #expect(next(session: short, at: "10:12") == nil)
-        let moment = try #require(next(session: short, at: "10:13"))
+        #expect(next(session: short, at: "10:07") == nil)
+        let moment = try #require(next(session: short, at: "10:08"))
         #expect(moment.peek.message == "2 minutes left")
         #expect(moment.peek.actions == [.gotIt, .extend(minutes: 10)])
-        // Twenty minutes is not short.
-        #expect(next(session: session(from: "10:00", to: "10:20"), at: "10:10")?.peek.message == "10 minutes left")
+        // Fifteen minutes is not short; a second less is.
+        #expect(next(session: session(from: "10:00", to: "10:15"), at: "10:05")?.peek.message == "10 minutes left")
+        let shorter = FocusSession(id: sessionID, taskID: 7, action: "Write the report", mode: .normal,
+                                   startedAt: at("10:00").addingTimeInterval(1), plannedEnd: at("10:15"), phase: .running)
+        #expect(next(session: shorter, at: "10:05") == nil)
+    }
+
+    @Test func aFifteenMinuteTaskIsWarnedAfterFiveMinutes() throws {
+        let fifteen = session(from: "10:00", to: "10:15")
+
+        #expect(next(session: fifteen, at: "10:04") == nil)
+        #expect(next(session: fifteen, at: "10:05")?.peek.message == "10 minutes left")
     }
 
     @Test func aSessionNoLongerThanItsWarningIsNotWarned() {
@@ -119,13 +129,32 @@ struct RaccoonMomentsTests {
 
     @Test func theWarningShowsOncePerSession() {
         let running = session(from: "10:00", to: "11:00")
-        let shown = [RaccoonMoment.ID(.endWarning, sessionID.uuidString): at("10:50")]
+        let shown = [RaccoonMoment.ID(.endWarning, "\(sessionID.uuidString)-0"): at("10:50")]
 
         #expect(next(session: running, shown: shown, at: "10:55") == nil)
         // Another session is warned in its turn.
         let other = FocusSession(id: UUID(), taskID: 7, action: "Write the report", mode: .normal,
                                  startedAt: at("10:00"), plannedEnd: at("11:00"), phase: .running)
         #expect(next(session: other, shown: shown, at: "10:55")?.kind == .endWarning)
+    }
+
+    @Test func moreTimeBringsTheWarningBackBeforeTheNewEndButAPauseDoesNot() throws {
+        let running = session(from: "10:00", to: "11:00")
+        let first = try #require(next(session: running, at: "10:50"))
+        let shown = [first.id: at("10:50")]
+
+        // +10 min at 10:51: 19 minutes left, then warned again at 11:00.
+        let extended = session(from: "10:00", to: "11:10")
+        #expect(next(session: extended, extended: 600, shown: shown, at: "10:55") == nil)
+        let again = try #require(next(session: extended, extended: 600, shown: shown, at: "11:00"))
+        #expect(again.kind == .endWarning)
+        #expect(again.id != first.id)
+        #expect(again.peek.message == "10 minutes left")
+
+        // A 5-minute pause at 10:52 moved the end to 11:05: still 8 minutes
+        // left once resumed, and nothing new to say.
+        let resumed = session(from: "10:00", to: "11:05")
+        #expect(next(session: resumed, shown: shown, at: "10:57") == nil)
     }
 
     // MARK: Time's up
@@ -200,7 +229,7 @@ struct RaccoonMomentsTests {
         let moment = try #require(next(session: onBreak, plan: day, runs: runs, at: "11:00"))
         #expect(moment.id == RaccoonMoment.ID(.breakStarted, "\(sessionID.uuidString)-2"))
         #expect(moment.peek == RaccoonPeek(poseID: "coffee", message: "Enjoy your break", actions: [.backToTask]))
-        #expect(moment.duration == 8)
+        #expect(moment.duration == 20)
         #expect(next(session: onBreak, plan: day, runs: runs, shown: [moment.id: at("11:00")], at: "11:01") == nil)
         #expect(!RaccoonMoments.isOnLunch(onBreak, plan: day, runs: runs, at: at("11:00"), timeZone: bogota))
     }
@@ -215,6 +244,21 @@ struct RaccoonMomentsTests {
         // Back to work once lunch is over.
         let working = session(from: "12:30", to: "14:00")
         #expect(!RaccoonMoments.isOnLunch(working, plan: day, runs: runs, at: at("12:45"), timeZone: bogota))
+    }
+
+    @Test func betweenBlocksABreakHasCoffeeAndLunchIsANap() {
+        let between = plan([block(1, .task, (10, 0), (11, 0), taskID: 7), block(2, .break, (11, 0), (11, 15)),
+                            block(4, .lunch, (12, 0), (13, 0)), block(5, .break, (14, 0), (14, 15))])
+        #expect(RaccoonMoments.planBreak(between, at: at("11:05"), timeZone: bogota) == .onBreak)
+        #expect(RaccoonMoments.planBreak(between, at: at("12:00"), timeZone: bogota) == .onLunch)
+        #expect(RaccoonMoments.planBreak(between, at: at("12:59"), timeZone: bogota) == .onLunch)
+        #expect(RaccoonMoments.planBreak(between, at: at("13:00"), timeZone: bogota) == nil)
+        #expect(RaccoonMoments.planBreak(between, at: at("10:30"), timeZone: bogota) == nil)
+        // Only an approved plan, and only fixed breaks.
+        #expect(RaccoonMoments.planBreak(plan(between.blocks, state: .draft), at: at("12:30"), timeZone: bogota) == nil)
+        #expect(RaccoonMoments.planBreak(nil, at: at("12:30"), timeZone: bogota) == nil)
+        let loose = plan([DayBlock(id: 9, kind: .break, start: ClockTime(15, 0), end: ClockTime(15, 30))])
+        #expect(RaccoonMoments.planBreak(loose, at: at("15:10"), timeZone: bogota) == nil)
     }
 
     // MARK: Blocked visits
