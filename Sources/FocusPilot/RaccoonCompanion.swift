@@ -347,19 +347,25 @@ final class RaccoonStageView: NSView {
         }
     }
 
+    /// Centered over the raccoon, kept inside the view.
+    private func bubbleOrigin(width: CGFloat) -> NSPoint {
+        let x = min(max(poseFrame.midX - width / 2, 0), bounds.maxX - width)
+        return NSPoint(x: x, y: frameSize * pointsPerPixel - 4)
+    }
+
     /// Shows `message` in the bubble. A bubble already shown changes its
     /// text in place, so the time ticking while hovered does not redraw it.
     func setBubble(_ message: String?) {
         if let message, let bubble {
             bubble.setMessage(message)
-            bubble.setFrameOrigin(NSPoint(x: bounds.maxX - bubble.frame.width, y: frameSize * pointsPerPixel - 4))
+            bubble.setFrameOrigin(bubbleOrigin(width: bubble.frame.width))
             return
         }
         bubble?.removeFromSuperview()
         bubble = nil
         if let message {
             let view = RaccoonBubbleView(message: message, maxWidth: bounds.width)
-            view.setFrameOrigin(NSPoint(x: bounds.maxX - view.frame.width, y: frameSize * pointsPerPixel - 4))
+            view.setFrameOrigin(bubbleOrigin(width: view.frame.width))
             view.onClick = { [weak self] in self?.onBubbleClick?() }
             addSubview(view)
             bubble = view
