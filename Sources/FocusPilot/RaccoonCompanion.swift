@@ -347,7 +347,14 @@ final class RaccoonStageView: NSView {
         }
     }
 
+    /// Shows `message` in the bubble. A bubble already shown changes its
+    /// text in place, so the time ticking while hovered does not redraw it.
     func setBubble(_ message: String?) {
+        if let message, let bubble {
+            bubble.setMessage(message)
+            bubble.setFrameOrigin(NSPoint(x: bounds.maxX - bubble.frame.width, y: frameSize * pointsPerPixel - 4))
+            return
+        }
         bubble?.removeFromSuperview()
         bubble = nil
         if let message {
@@ -364,25 +371,35 @@ final class RaccoonStageView: NSView {
 /// the peek. It accepts the first click, since its panel is never key.
 final class RaccoonBubbleView: NSView {
     var onClick: (() -> Void)?
-    let message: String
+    private(set) var message: String
+    private let label: NSTextField
+    private let maxWidth: CGFloat
 
     init(message: String, maxWidth: CGFloat) {
         self.message = message
-        let label = NSTextField(wrappingLabelWithString: message)
-        label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        self.maxWidth = maxWidth
+        label = NSTextField(wrappingLabelWithString: message)
+        label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         label.textColor = .labelColor
         label.preferredMaxLayoutWidth = maxWidth - 24
         label.isSelectable = false
-        let size = label.fittingSize
-        super.init(frame: NSRect(x: 0, y: 0, width: min(size.width + 24, maxWidth),
-                                 height: min(size.height + 16, RaccoonStageView.bubbleHeight)))
+        super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.borderWidth = 1
-        label.frame = bounds.insetBy(dx: 12, dy: 8)
         addSubview(label)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
+        setMessage(message)
+    }
+
+    /// Changes the text and fits the bubble to it.
+    func setMessage(_ message: String) {
+        self.message = message
+        label.stringValue = message
+        let size = label.fittingSize
+        setFrameSize(NSSize(width: min(size.width + 24, maxWidth), height: min(size.height + 16, RaccoonStageView.bubbleHeight)))
+        label.frame = bounds.insetBy(dx: 12, dy: 8)
         setAccessibilityLabel(message)
     }
 
