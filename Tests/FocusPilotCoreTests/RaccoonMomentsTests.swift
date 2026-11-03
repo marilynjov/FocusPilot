@@ -164,7 +164,7 @@ struct RaccoonMomentsTests {
 
         let moment = try #require(next(session: ended, at: "11:00"))
         #expect(moment.id == RaccoonMoment.ID(.timesUp, sessionID.uuidString))
-        #expect(moment.peek == RaccoonPeek(poseID: "excited", message: "Time's up! Nice work.",
+        #expect(moment.peek == RaccoonPeek(poseID: "playbow", message: "Time's up! Nice work.",
                                            actions: [.keepGoing(minutes: 10), .done]))
         #expect(moment.duration == 60)
         #expect(moment.sessionID == sessionID)
@@ -337,5 +337,29 @@ struct RaccoonMomentsTests {
         #expect(RaccoonMoments.minutes(599) == "10 minutes")
         #expect(RaccoonMoments.minutes(60) == "1 minute")
         #expect(RaccoonMoments.minutes(10) == "1 minute")
+    }
+}
+
+@Suite("Raccoon moments: when the next one falls due")
+struct RaccoonMomentsDueTests {
+    let start = Date(timeIntervalSinceReferenceDate: 815_000_000)
+
+    func session(minutes: Double, phase: SessionPhase = .running) -> FocusSession {
+        FocusSession(id: UUID(), taskID: 1, action: "Write", mode: .normal, startedAt: start,
+                     plannedEnd: start.addingTimeInterval(minutes * 60), phase: phase)
+    }
+
+    @Test func theEndWarningFallsDueExactlyAtItsThreshold() {
+        let fifteen = session(minutes: 15)
+        #expect(RaccoonMoments.nextDue(session: fifteen, plan: nil, runs: [], at: start, timeZone: .gmt)
+            == start.addingTimeInterval(5 * 60))
+        let ten = session(minutes: 10)
+        #expect(RaccoonMoments.nextDue(session: ten, plan: nil, runs: [], at: start, timeZone: .gmt)
+            == start.addingTimeInterval(8 * 60))
+        // Past it, or paused, nothing is ahead.
+        #expect(RaccoonMoments.nextDue(session: fifteen, plan: nil, runs: [], at: start.addingTimeInterval(6 * 60),
+                                       timeZone: .gmt) == nil)
+        #expect(RaccoonMoments.nextDue(session: session(minutes: 15, phase: .paused(since: start)), plan: nil, runs: [],
+                                       at: start, timeZone: .gmt) == nil)
     }
 }

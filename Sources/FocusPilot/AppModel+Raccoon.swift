@@ -60,13 +60,17 @@ extension AppModel {
     }
 
     /// Time-based moments (ten minutes left, a break or block coming up)
-    /// have no event of their own, so they are looked for every 15 seconds
-    /// while a session or an approved plan is under way.
+    /// have no event of their own: they are looked for when the next one
+    /// falls due, and at least every 15 seconds while a session or an
+    /// approved plan is under way.
     func followRaccoonMoments() {
         raccoonMomentsTask?.cancel()
         raccoonMomentsTask = Task { [weak self] in
             while let self, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15), tolerance: .seconds(5))
+                let due = RaccoonMoments.nextDue(session: snapshot.session, plan: raccoonPlan, runs: raccoonRuns,
+                                                 at: .now, timeZone: .current)
+                let wait = min(15, max(0.2, (due?.timeIntervalSinceNow ?? 15) + 0.2))
+                try? await Task.sleep(for: .seconds(wait), tolerance: .seconds(wait < 15 ? 0.2 : 5))
                 guard displayPreferences.raccoonMode != .off,
                       snapshot.activeSession != nil || raccoonPlan?.state == .approved || raccoon.moment != nil
                 else { continue }

@@ -74,6 +74,32 @@ public enum RaccoonMoments {
     static let breakNotice: TimeInterval = 2 * 60
     static let nextBlockNotice: TimeInterval = 10 * 60
     static let freshness: TimeInterval = 60
+    static let timesUpPose = "playbow"
+
+    /// When the next time-based moment falls due after `now`: the end
+    /// warning, a break coming up, or the next block coming up. The app
+    /// looks again then, so a moment shows on time instead of up to a
+    /// polling interval late. Nil when none is ahead.
+    public static func nextDue(session: FocusSession?, plan: DayPlan?, runs: [PlanRun], at now: Date,
+                               timeZone: TimeZone) -> Date? {
+        var times: [Date] = []
+        if let session, session.phase == .running {
+            let length = session.plannedEnd.timeIntervalSince(session.startedAt)
+            let threshold = length < shortSession ? shortWarning : warning
+            if length > threshold { times.append(session.plannedEnd.addingTimeInterval(-threshold)) }
+            if let plan, let (block, _) = plannedBlock(of: session, plan: plan, runs: runs, timeZone: timeZone) {
+                times += block.breaks.map { $0.start.addingTimeInterval(-breakNotice) }
+                times += block.breaks.map(\.start)
+            }
+        }
+        if session?.hasEnded != false, let plan, plan.state == .approved {
+            let ran = Set(runs.map(\.blockID))
+            for block in PlanSessions.sessions(in: plan, timeZone: timeZone) where !ran.contains(block.blockID) {
+                times.append(block.start.addingTimeInterval(-nextBlockNotice))
+            }
+        }
+        return times.filter { $0 > now }.min()
+    }
 
     /// The moment to show now, if any. `session` is the latest one, which
     /// may have ended; `extended` is the time "+10 min" has added to it;
@@ -139,7 +165,9 @@ public enum RaccoonMoments {
                                                                    timeZone: timeZone) {
                     return []
                 }
-                let peek = RaccoonPeek(poseID: "excited", message: "Time's up! Nice work.",
+                // Its own pose, so time's up is told apart from "Nice work!"
+                // after Complete (owner request, 2026-11-02).
+                let peek = RaccoonPeek(poseID: timesUpPose, message: "Time's up! Nice work.",
                                        actions: [.keepGoing(minutes: extraMinutes), .done])
                 return [RaccoonMoment(id: .init(.timesUp, id), peek: peek, duration: timesUpDuration, sessionID: session.id)]
             }
