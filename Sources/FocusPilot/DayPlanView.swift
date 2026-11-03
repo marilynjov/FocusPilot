@@ -116,11 +116,6 @@ struct DayPlanView: View {
                         .foregroundStyle(palette.color(.muted))
                 }
                 Spacer()
-                Button("Add to Plan", systemImage: "plus") {
-                    if let plan = model.dayPlan { adding = .init(in: plan) }
-                }
-                .disabled(model.dayPlan == nil)
-                .help("Add a new task, one from your list, or a break to today’s plan.")
                 Button("Approve Plan", systemImage: "checkmark") {
                     if let date = model.dayPlan?.date { Task { await model.approveDayPlan(on: date) } }
                 }

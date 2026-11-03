@@ -28,14 +28,28 @@ struct AddToPlanSheet: View {
         var minutes: Int
         /// A task to start with, chosen from the plan page's task list.
         var taskID: Int64?
+        /// Whether a new task also goes on today's plan; off, it only joins
+        /// the task list. On by default on Today's plan.
+        var schedules = true
 
         /// The first free hour (see `BlockEditorSheet.Draft(newIn:)`).
-        init(in plan: DayPlan, taskID: Int64? = nil) {
+        init(in plan: DayPlan, taskID: Int64? = nil, schedules: Bool = true) {
             let slot = BlockEditorSheet.Draft(newIn: plan).block
             date = plan.date
             start = slot.start
             minutes = max(slot.span.minutes, TimelinePlacement.snapMinutes)
             self.taskID = taskID
+            self.schedules = schedules
+        }
+
+        /// Before today's plan has loaded: an hour from the next quarter hour.
+        init(on date: LocalDate, schedules: Bool) {
+            let now = Calendar.current.dateComponents([.hour, .minute], from: .now)
+            let next = min(((now.hour ?? 9) * 60 + (now.minute ?? 0) + 14) / 15 * 15, 23 * 60)
+            self.date = date
+            start = ClockTime(minutes: next)
+            minutes = 60
+            self.schedules = schedules
         }
     }
 
@@ -49,6 +63,7 @@ struct AddToPlanSheet: View {
     @State private var taskID: Int64?
     @State private var start: ClockTime
     @State private var minutes: Int
+    @State private var schedules: Bool
     @State private var isSaving = false
     /// Blocks the new block would overlap, while the owner is asked to confirm.
     @State private var overlapping: [DayBlock]?
@@ -62,11 +77,15 @@ struct AddToPlanSheet: View {
         _taskID = State(initialValue: draft.taskID)
         _start = State(initialValue: draft.start)
         _minutes = State(initialValue: draft.minutes)
+        _schedules = State(initialValue: draft.schedules)
     }
+
+    /// Existing tasks and breaks are always placed on the plan.
+    private var isScheduling: Bool { choice != .newTask || schedules }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Add to Today’s Plan")
+            Text(isScheduling ? "Add to Today’s Plan" : "New Task")
                 .font(.title3.weight(.semibold))
             Picker("Add", selection: $choice) {
                 ForEach(Choice.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -79,13 +98,16 @@ struct AddToPlanSheet: View {
                 case .existingTask: existingTaskField
                 case .breakTime: EmptyView()
                 }
-                Section {
+                if choice == .newTask {
+                    Toggle("Add to today’s plan", isOn: $schedules)
+                }
+                if isScheduling { Section {
                     // From and To, with the length worked out (owner request,
                     // 2026-11-02). Changing From keeps the length.
                     DatePicker("From", selection: startDate, displayedComponents: .hourAndMinute)
                     DatePicker("To", selection: endDate, displayedComponents: .hourAndMinute)
                     LabeledContent("Length", value: Self.lengthText(block.span.minutes))
-                }
+                } }
             }
             .formStyle(.grouped)
             SettingsError(message: model.dayPlanError)
@@ -131,8 +153,11 @@ struct AddToPlanSheet: View {
                 }
             }
             ProjectPicker(projectTitles: model.projectTitles, projectName: $capture.projectName)
+            TextField("Next action", text: Binding(get: { capture.nextAction ?? "" },
+                                                   set: { capture.nextAction = $0.isEmpty ? nil : $0 }),
+                      prompt: Text("Optional"))
         } footer: {
-            Text("The task is also added to your task list.")
+            Text(schedules ? "The task is also added to your task list." : "The task joins your task list without a time.")
                 .font(.callout)
                 .foregroundStyle(palette.color(.muted))
         }
@@ -195,7 +220,10 @@ struct AddToPlanSheet: View {
         isSaving = true
         defer { isSaving = false }
         let outcome: BlockEditOutcome
-        if choice == .newTask, let newTask = capture.newTask {
+        if choice == .newTask, !schedules, let newTask = capture.newTask {
+            if await model.capture(newTask) { dismiss() }
+            return
+        } else if choice == .newTask, let newTask = capture.newTask {
             outcome = await model.addBlock(block, forNew: newTask, on: date, confirmed: confirmed)
         } else {
             outcome = await model.addBlock(block, on: date, confirmed: confirmed)

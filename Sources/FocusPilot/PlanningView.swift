@@ -47,15 +47,17 @@ struct PlanningView: View {
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
-                    Button("New Task", systemImage: "plus") { isCapturing = true }
-                        .help("New task (⌘N)")
+                    Button("Add", systemImage: "plus") { isCapturing = true }
+                        .help(page == .dayPlan ? "Add a task or break to today’s plan (⌘N)" : "New task (⌘N)")
                 }
         }
         .frame(minWidth: 760, minHeight: 420)
         .focusedSceneValue(\.quickCapture, { isCapturing = true })
         .sheet(item: sheet) { sheet in
             switch sheet {
-            case .capture: QuickCaptureSheet(model: model)
+            // One way to add (owner request, 2026-11-02): a task for the
+            // list, or on Today's plan a task or break with its times.
+            case .capture: AddToPlanSheet(model: model, draft: captureDraft)
             case .startFocus: StartFocusSheet(model: model)
             case .wrapUp:
                 if let pending = model.wrapUp { WrapUpSheet(model: model, prompt: pending.prompt) }
@@ -101,6 +103,14 @@ struct PlanningView: View {
                 }
             }
         )
+    }
+
+    private var captureDraft: AddToPlanSheet.Draft {
+        let schedules = page == .dayPlan
+        if let plan = model.dayPlan, plan.date == model.todayDate {
+            return AddToPlanSheet.Draft(in: plan, schedules: schedules)
+        }
+        return AddToPlanSheet.Draft(on: model.todayDate, schedules: schedules)
     }
 
     private var title: String {
