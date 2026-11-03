@@ -76,6 +76,13 @@ public enum RaccoonMoments {
     static let freshness: TimeInterval = 60
     static let timesUpPose = "playbow"
 
+    /// After "+10 min" or "Keep going", the raccoon looks tired for a moment
+    /// before it goes back to work (owner request, 2026-11-02).
+    public static func moreTime(minutes: Int) -> RaccoonPeek {
+        RaccoonPeek(poseID: "lying", message: "\(minutes) more minutes. You’ve got this.")
+    }
+    public static let moreTimeDuration: TimeInterval = 4
+
     /// When the next time-based moment falls due after `now`: the end
     /// warning, a break coming up, or the next block coming up. The app
     /// looks again then, so a moment shows on time instead of up to a

@@ -363,3 +363,13 @@ struct RaccoonMomentsDueTests {
                                        at: start, timeZone: .gmt) == nil)
     }
 }
+
+@Suite("Raccoon moments: more time")
+struct RaccoonMoreTimeTests {
+    @Test func askingForMoreTimeShowsTheTiredRaccoon() {
+        let peek = RaccoonMoments.moreTime(minutes: 10)
+        #expect(peek.poseID == "lying")
+        #expect(peek.message == "10 more minutes. You’ve got this.")
+        #expect(RaccoonArtTests.manifest.pose(peek.poseID)?.name == "Tired")
+    }
+}

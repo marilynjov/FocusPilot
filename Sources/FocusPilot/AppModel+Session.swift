@@ -135,12 +135,20 @@ extension AppModel {
         let interval = TimeInterval(minutes * 60)
         if await run({ try await $0.extend(by: interval) }) {
             raccoonExtensions[id, default: 0] += interval
+            showRaccoonTired(minutes: minutes)
         }
+    }
+
+    /// The tired raccoon after more time is asked for.
+    private func showRaccoonTired(minutes: Int) {
+        raccoon.peek(RaccoonMoments.moreTime(minutes: minutes), for: .seconds(RaccoonMoments.moreTimeDuration))
     }
 
     /// "Keep going" once a session has ended: the same task and mode again.
     func keepGoing(minutes: Int) async {
-        await run { try await $0.keepGoing(duration: TimeInterval(minutes * 60)) }
+        if await run({ try await $0.keepGoing(duration: TimeInterval(minutes * 60)) }) {
+            showRaccoonTired(minutes: minutes)
+        }
     }
 
     /// "Back to task": ends the break early.
