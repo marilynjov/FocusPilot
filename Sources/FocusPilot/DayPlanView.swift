@@ -230,6 +230,8 @@ private struct PlanTaskPanel: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(.isButton)
+        // VO-Space on the button opens the sheet, like a double-click.
+        .accessibilityAction { add(item.id) }
         .accessibilityAction(named: "Add to Plan") { add(item.id) }
     }
 }
@@ -531,11 +533,18 @@ private struct TimelineBlock: View {
     }
 
     /// A 15-minute step from VoiceOver or the keyboard, saved like a drag.
+    /// It starts from where the block shows, so a step before the last save
+    /// answers still adds up, and says the new times or that nothing changed.
     private func step(_ change: Drag) {
-        switch change {
-        case .move(let minutes): commit(TimelinePlacement.moved(block, by: minutes, within: hours))
-        case .resize(let minutes): commit(TimelinePlacement.resized(block, by: minutes, within: hours))
+        let from = settled
+        let moved = switch change {
+        case .move(let minutes): TimelinePlacement.moved(from, by: minutes, within: hours)
+        case .resize(let minutes): TimelinePlacement.resized(from, by: minutes, within: hours)
         }
+        let announcement = moved.span == from.span ? "No change" : DayPlanText.times(moved.span)
+        AccessibilityNotification.Announcement(announcement).post()
+        guard moved.span != from.span else { return }
+        commit(moved)
     }
 
     /// Settles the block at its snapped times and saves them, showing it
