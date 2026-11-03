@@ -38,6 +38,9 @@ public enum FocusEngine {
             session.phase = .onBreak(until: now.addingTimeInterval(duration))
         case (.endBreak, .onBreak):
             session.phase = .running
+        case (.extend(let interval), .running), (.extend(let interval), .paused), (.extend(let interval), .onBreak):
+            guard interval > 0 else { throw .nonPositiveDuration }
+            session.plannedEnd += interval
         case (.endBreak, .running) where persisted.phase != session.phase:
             // The break ran out before the owner ended it; report that instead.
             return reconcile(persisted, at: now)

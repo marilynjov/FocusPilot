@@ -29,6 +29,9 @@ public enum FocusEvent: Equatable, Sendable {
     case resume
     case startBreak(duration: TimeInterval)
     case endBreak
+    /// "+10 min": moves the planned end later by the interval, while
+    /// running, paused or on a break (owner request, 2026-11-02).
+    case extend(by: TimeInterval)
     case complete
     /// Time passed: a timer fired, the Mac woke, or the app launched with a
     /// persisted session. Applies any deadline the clock has crossed.

@@ -58,7 +58,7 @@ struct FocusEngineLifecycleTests {
     }
 
     @Test func eventsWithoutASessionAreRejected() {
-        for event in [FocusEvent.pause, .resume, .startBreak(duration: 300), .endBreak, .complete] {
+        for event in [FocusEvent.pause, .resume, .startBreak(duration: 300), .endBreak, .extend(by: 600), .complete] {
             #expect(throws: FocusEngineError.noActiveSession) {
                 try FocusEngine.handle(event, session: nil, at: clock.now)
             }
@@ -100,6 +100,46 @@ struct FocusEngineLifecycleTests {
         }
         #expect(throws: FocusEngineError.notAllowed(.startBreak(duration: 300), in: paused!.phase)) {
             try FocusEngine.handle(.startBreak(duration: 300), session: paused, at: clock.now)
+        }
+    }
+
+    // MARK: +10 min
+
+    @Test(arguments: [nil, FocusEvent.pause, .startBreak(duration: 300)])
+    mutating func extendingMovesThePlannedEndLaterAndPublishesIt(after before: FocusEvent?) throws {
+        let started = try #require(FocusEngine.handle(.start(startRequest(minutes: 25)), session: nil, at: clock.now).session)
+        clock.advance(minutes: 10)
+        var current = started
+        if let before { current = try #require(FocusEngine.handle(before, session: started, at: clock.now).session) }
+
+        let extended = try FocusEngine.handle(.extend(by: 600), session: current, at: clock.now)
+
+        let session = try #require(extended.session)
+        #expect(session.plannedEnd == clock.minutes(from: started.plannedEnd, 10))
+        // The phase is left as it was: a pause stays paused, a break keeps its end.
+        #expect(session.phase == current.phase)
+        #expect(extended.effects == [.persist(session), .publishPolicy(FocusEngine.policy(for: session))])
+    }
+
+    @Test mutating func extendingARunningSessionPublishesTheNewEnd() throws {
+        let started = try FocusEngine.handle(.start(startRequest(mode: .strict, minutes: 25)), session: nil, at: clock.now).session
+
+        let extended = try FocusEngine.handle(.extend(by: 600), session: started, at: clock.now)
+
+        let later = clock.minutes(from: started!.plannedEnd, 10)
+        #expect(extended.effects.last == .publishPolicy(SessionPolicy(sessionID: sessionID, mode: .strict, end: later)))
+    }
+
+    @Test mutating func extendingNeedsAPositiveIntervalAndASessionStillUnderWay() throws {
+        let started = try FocusEngine.handle(.start(startRequest(minutes: 25)), session: nil, at: clock.now).session
+
+        #expect(throws: FocusEngineError.nonPositiveDuration) {
+            try FocusEngine.handle(.extend(by: 0), session: started, at: clock.now)
+        }
+        // Past the planned end there is nothing left to extend.
+        clock.advance(minutes: 26)
+        #expect(throws: FocusEngineError.noActiveSession) {
+            try FocusEngine.handle(.extend(by: 600), session: started, at: clock.now)
         }
     }
 }

@@ -33,6 +33,33 @@ extension FocusCoordinator {
         await followPlanAfterAction()
     }
 
+    /// Ends a break early ("Back to task"). A plan break already started is
+    /// not started again.
+    public func endBreak() async throws {
+        try await handle(.endBreak)
+        await followPlanAfterAction()
+    }
+
+    /// "+10 min": moves the planned end later, while running, paused or on
+    /// a break (owner request, 2026-11-02). On a plan block's session it
+    /// also notes that the block needed more time (D3), as "I need more
+    /// time" does, for replanning (D10).
+    public func extend(by interval: TimeInterval) async throws {
+        try await handle(.extend(by: interval))
+        if let active = session, !active.hasEnded, planRun?.sessionID == active.id {
+            planRun = try await repository.requestMoreTime(for: active.id)
+            await broadcast()
+        }
+    }
+
+    /// "Keep going" once a session has ended: a new session on the same
+    /// task, in the same mode, for `duration` (owner request, 2026-11-02).
+    public func keepGoing(duration: TimeInterval) async throws {
+        guard let last = session else { throw SessionError.noCurrentTask }
+        try await handle(.start(SessionRequest(id: UUID(), taskID: last.taskID, action: last.action, mode: last.mode,
+                                               duration: duration)))
+    }
+
     /// Applies any deadline the clock has passed. Called at `nextDeadline`,
     /// after the Mac wakes, and at launch.
     public func reconcile() async throws {

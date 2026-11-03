@@ -117,13 +117,16 @@ struct RaccoonCompanionTests {
         #expect(RaccoonArtTests.manifest.pose(RaccoonPresence.workingPose)?.name == "Working")
     }
 
-    @Test func pausedSitsAndABreakHasCoffee() {
+    @Test func pausedSitsABreakHasCoffeeAndLunchIsANap() {
         #expect(RaccoonActivity(.running) == .working)
         #expect(RaccoonActivity(.paused(since: .now)) == .paused)
         #expect(RaccoonActivity(.onBreak(until: .now)) == .onBreak)
+        #expect(RaccoonActivity(.onBreak(until: .now), isLunch: true) == .onLunch)
+        #expect(RaccoonActivity(.running, isLunch: true) == .working)
+        #expect(RaccoonActivity.onLunch.poseID == "sleep")
         #expect(RaccoonActivity(.ended(at: .now, reason: .completed)) == nil)
         #expect(RaccoonActivity(nil) == nil)
-        for activity in [RaccoonActivity.working, .paused, .onBreak] {
+        for activity in [RaccoonActivity.working, .paused, .onBreak, .onLunch] {
             #expect(RaccoonArtTests.manifest.pose(activity.poseID) != nil, "\(activity)")
         }
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .paused) == RaccoonPresence(poseID: "sit"))

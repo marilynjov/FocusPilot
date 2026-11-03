@@ -72,6 +72,12 @@ extension FocusCoordinator {
         await broadcast()
     }
 
+    /// Today's plan, if one was made, and its block runs: what the raccoon's
+    /// moments read (D12). Only reads, so it never creates the day's plan.
+    public func planToFollowToday() async throws -> (plan: DayPlan?, runs: [PlanRun]) {
+        try await repository.planToFollow(on: LocalDate(containing: now(), in: timeZone()))
+    }
+
     /// Takes every step today's approved plan asks for now, then notes when
     /// it next asks. Called at launch, at every deadline, after the owner
     /// ends or resumes a session, and after plan edits. Owner sessions,

@@ -179,15 +179,42 @@ public enum RaccoonCompanionMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A button under the raccoon's speech bubble (D12). Each runs the same
+/// app command as the menu bar and focus panel; none has logic of its own.
+public enum RaccoonPeekAction: Hashable, Sendable {
+    /// Dismisses the peek.
+    case gotIt
+    /// Adds time to the session under way.
+    case extend(minutes: Int)
+    /// Starts a new session on the same task once one has ended.
+    case keepGoing(minutes: Int)
+    /// Ends the break.
+    case backToTask
+    /// Dismisses the peek after a session ended.
+    case done
+
+    public var title: String {
+        switch self {
+        case .gotIt: "Got it"
+        case .extend(let minutes): "+\(minutes) min"
+        case .keepGoing(let minutes): "Keep going +\(minutes) min"
+        case .backToTask: "Back to task"
+        case .done: "Done"
+        }
+    }
+}
+
 /// A reminder that brings the raccoon in for a moment: which pose to show
-/// and, optionally, what its speech bubble says.
+/// and, optionally, what its speech bubble says and the buttons under it.
 public struct RaccoonPeek: Equatable, Sendable {
     public var poseID: String
     public var message: String?
+    public var actions: [RaccoonPeekAction]
 
-    public init(poseID: String, message: String? = nil) {
+    public init(poseID: String, message: String? = nil, actions: [RaccoonPeekAction] = []) {
         self.poseID = poseID
         self.message = message
+        self.actions = actions
     }
 }
 
@@ -196,23 +223,28 @@ public enum RaccoonActivity: Equatable, Sendable {
     case working
     case paused
     case onBreak
+    /// On a break that is the plan's lunch (owner request, 2026-11-02).
+    case onLunch
 
-    /// Nil when no session is under way.
-    public init?(_ phase: SessionPhase?) {
+    /// Nil when no session is under way. `isLunch` comes from the plan
+    /// (`RaccoonMoments.isOnLunch`).
+    public init?(_ phase: SessionPhase?, isLunch: Bool = false) {
         switch phase {
         case .running: self = .working
         case .paused: self = .paused
-        case .onBreak: self = .onBreak
+        case .onBreak: self = isLunch ? .onLunch : .onBreak
         case .ended, nil: return nil
         }
     }
 
-    /// Working at the laptop, sitting while paused, coffee on a break.
+    /// Working at the laptop, sitting while paused, coffee on a break, a
+    /// nap at lunch.
     public var poseID: String {
         switch self {
         case .working: RaccoonPresence.workingPose
         case .paused: RaccoonPresence.idlePose
         case .onBreak: RaccoonPresence.breakPose
+        case .onLunch: RaccoonPresence.lunchPose
         }
     }
 }
@@ -223,6 +255,7 @@ public struct RaccoonPresence: Equatable, Sendable {
     public static let idlePose = "sit"
     public static let workingPose = "laptop"
     public static let breakPose = "coffee"
+    public static let lunchPose = "sleep"
 
     public var poseID: String
     public var message: String?

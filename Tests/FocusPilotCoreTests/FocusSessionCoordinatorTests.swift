@@ -123,6 +123,48 @@ struct FocusSessionCoordinatorTests {
             try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
         }
     }
+
+    // MARK: +10 min and Keep going (D12)
+
+    @Test func moreTimeMovesThePlannedEndAndTheNextDeadline() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .strict)
+        fixture.advance(minutes: 20)
+
+        try await fixture.coordinator.extend(by: 10 * 60)
+
+        let later = wednesdayMorningInBogota.addingTimeInterval(35 * 60)
+        #expect(await fixture.coordinator.snapshot().activeSession?.plannedEnd == later)
+        #expect(await fixture.coordinator.snapshot().nextDeadline == later)
+        #expect(await fixture.publisher.published.last?.session?.end == later)
+    }
+
+    @Test func keepGoingStartsTheSameTaskInTheSameModeOnceTheSessionEnded() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .strict)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+
+        await #expect(throws: FocusEngineError.sessionAlreadyActive) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
+        }
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await fixture.coordinator.keepGoing(duration: 10 * 60)
+
+        let next = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(next.id != first.id)
+        #expect(next.taskID == first.taskID)
+        #expect(next.action == first.action)
+        #expect(next.mode == .strict)
+        #expect(next.plannedEnd == fixture.clock.now.addingTimeInterval(10 * 60))
+    }
+
+    @Test func keepGoingNeedsASessionFirst() async throws {
+        let fixture = try await SessionFixture()
+        await #expect(throws: FocusCoordinator.SessionError.noCurrentTask) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
+        }
+    }
 }
 
 @Suite("Ending a strict session early")
