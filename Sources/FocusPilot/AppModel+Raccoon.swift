@@ -23,8 +23,9 @@ extension AppModel {
             raccoon.endPeek(reevaluating: false)
         }
         let now = Date.now
-        guard let moment = RaccoonMoments.next(mode: displayPreferences.raccoonMode, session: session, plan: raccoonPlan,
-                                               runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
+        guard let moment = RaccoonMoments.next(mode: displayPreferences.raccoonMode, session: session,
+                                               extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
+                                               plan: raccoonPlan, runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
                                                shown: raccoonShownMoments, at: now, timeZone: .autoupdatingCurrent)
         else { return }
         if let current = raccoon.moment, current.kind >= moment.kind { return }
@@ -41,10 +42,13 @@ extension AppModel {
     }
 
     /// Reads today's plan again; a plan change also changes the snapshot.
+    /// Reads from the snapshot loop and the timer can overlap, so a read
+    /// that finishes after a later one is dropped.
     func refreshRaccoonPlan() async {
-        guard displayPreferences.raccoonMode != .off, let coordinator,
-              let (plan, runs) = try? await coordinator.planToFollowToday()
-        else { return }
+        guard displayPreferences.raccoonMode != .off, let coordinator else { return }
+        raccoonPlanReads += 1
+        let read = raccoonPlanReads
+        guard let (plan, runs) = try? await coordinator.planToFollowToday(), read == raccoonPlanReads else { return }
         if plan != raccoonPlan { raccoonPlan = plan }
         raccoonPlanRuns = runs
     }
@@ -59,8 +63,9 @@ extension AppModel {
     /// have no event of their own, so they are looked for every 15 seconds
     /// while a session or an approved plan is under way.
     func followRaccoonMoments() {
-        Task { [weak self] in
-            while let self {
+        raccoonMomentsTask?.cancel()
+        raccoonMomentsTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15), tolerance: .seconds(5))
                 guard displayPreferences.raccoonMode != .off,
                       snapshot.activeSession != nil || raccoonPlan?.state == .approved || raccoon.moment != nil

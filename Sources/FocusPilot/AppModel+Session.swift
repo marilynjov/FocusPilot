@@ -7,10 +7,22 @@ import FocusPilotCore
 extension AppModel {
     /// What the current focus session is doing, for the raccoon; nil
     /// when there is none.
+    /// Between task blocks, an approved plan's break or lunch counts too.
     var raccoonActivity: RaccoonActivity? {
-        let session = snapshot.activeSession
-        return RaccoonActivity(session?.phase, isLunch: RaccoonMoments.isOnLunch(session, plan: raccoonPlan, runs: raccoonRuns,
-                                                                               at: .now, timeZone: .autoupdatingCurrent))
+        guard let session = snapshot.activeSession else {
+            return RaccoonMoments.planBreak(raccoonPlan, at: .now, timeZone: .autoupdatingCurrent)
+        }
+        return RaccoonActivity(session.phase, isLunch: RaccoonMoments.isOnLunch(session, plan: raccoonPlan, runs: raccoonRuns,
+                                                                              at: .now, timeZone: .autoupdatingCurrent))
+    }
+
+    /// The session that just reached its planned end, while "Keep going"
+    /// is still offered (as long as the raccoon's "Time's up" stays).
+    var keepGoingOffer: FocusSession? {
+        guard let session = snapshot.session, case .ended(let at, .reachedPlannedEnd) = session.phase,
+              now.timeIntervalSince(at) <= RaccoonMoments.timesUpDuration
+        else { return nil }
+        return session
     }
 
     /// The task a new session would run on: the pinned Now task.
@@ -119,7 +131,11 @@ extension AppModel {
     /// "+10 min" on the session under way, running, paused or on a break.
     /// On a plan block's session it also notes that the block needed more time.
     func extend(minutes: Int) async {
-        await run { try await $0.extend(by: TimeInterval(minutes * 60)) }
+        guard let id = snapshot.activeSession?.id else { return }
+        let interval = TimeInterval(minutes * 60)
+        if await run({ try await $0.extend(by: interval) }) {
+            raccoonExtensions[id, default: 0] += interval
+        }
     }
 
     /// "Keep going" once a session has ended: the same task and mode again.

@@ -58,6 +58,7 @@ struct MenuBarContent: View {
                     .foregroundStyle(.secondary)
             }
             ProtectionStatusView(model: model, showsDetail: false)
+            SessionControls(model: model)
             SiteExceptionLines(model: model)
             if let error = model.startupError ?? model.sessionError {
                 Text(error)

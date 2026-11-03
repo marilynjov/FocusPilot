@@ -1,8 +1,10 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Pause or Resume, +10 min, and Complete, for the active session. Shared by the menu
-/// bar popover, the focus panel and the Now card, so they behave the same.
+/// Pause or Resume (Back to Task on a break), +10 min, and Complete, for
+/// the active session, and Keep Going for a minute after one reached its
+/// end. Shared by the menu bar popover, the focus panel and the Now card,
+/// so they behave the same.
 ///
 /// Completing a strict session before its planned end first asks for
 /// confirmation, then waits `StrictEarlyEnd.wait` with a countdown; the
@@ -48,6 +50,14 @@ struct SessionControls: View {
                     }
                 }
             }
+        } else if model.keepGoingOffer != nil {
+            // Also on the raccoon's "Time's up", which is easy to miss.
+            Button { Task { await model.keepGoing(minutes: RaccoonMoments.extraMinutes) } } label: {
+                Label("Keep Going +\(RaccoonMoments.extraMinutes) min", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .help("Starts \(RaccoonMoments.extraMinutes) more minutes on the same task")
         }
     }
 
@@ -69,7 +79,12 @@ struct SessionControls: View {
 
     @ViewBuilder
     private func pauseButton(_ session: FocusSession) -> some View {
-        if case .paused = session.phase {
+        if case .onBreak = session.phase {
+            Button { Task { await model.endBreak() } } label: {
+                Label("Back to Task", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
+            }
+            .help("Ends the break")
+        } else if case .paused = session.phase {
             Button { Task { await model.resume() } } label: {
                 Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
             }

@@ -99,18 +99,36 @@ final class RaccoonCompanionController {
     /// The moment the raccoon is peeking in for (D12), if any.
     private(set) var moment: RaccoonMoment?
 
+    /// How long the peek has left while the pointer holds it.
+    private var peekLeft: Duration?
+    private var peekEnds: ContinuousClock.Instant?
+
     /// Brings the raccoon in with `peek` for `duration` (D12 reminders),
-    /// replacing any earlier peek. In Off mode nothing shows.
+    /// replacing any earlier peek. In Off mode nothing shows. The time
+    /// stands still while the pointer is over the raccoon or its bubble.
     func peek(_ peek: RaccoonPeek, for duration: Duration = defaultPeek) {
         moment = nil
         model.raccoonPeek = peek
+        peekLeft = duration
+        if isHovered { peekTask?.cancel() } else { runPeekClock() }
+        update()
+    }
+
+    private func runPeekClock() {
         peekTask?.cancel()
+        guard let left = peekLeft else { return }
+        peekEnds = .now + left
         peekTask = Task { [weak self] in
-            try? await Task.sleep(for: duration)
+            try? await Task.sleep(for: left)
             guard !Task.isCancelled else { return }
             self?.endPeek()
         }
-        update()
+    }
+
+    private func holdPeekClock() {
+        peekTask?.cancel()
+        peekTask = nil
+        if let peekEnds, peekLeft != nil { peekLeft = max(peekEnds - .now, .seconds(1)) }
     }
 
     /// Peeks in for `moment` for as long as it asks.
@@ -124,6 +142,8 @@ final class RaccoonCompanionController {
     func endPeek(reevaluating: Bool = true) {
         peekTask?.cancel()
         peekTask = nil
+        peekLeft = nil
+        peekEnds = nil
         moment = nil
         model.raccoonPeek = nil
         update()
@@ -175,14 +195,18 @@ final class RaccoonCompanionController {
         let message = shown?.message ?? (isHovered ? hoverText : nil)
         let actions = shown?.message != nil ? model.raccoonPeek?.actions ?? [] : []
         if stage?.bubbleMessage != message || stage?.bubbleActions != actions {
-            stage?.setBubble(message, actions: actions,
-                             toolTip: model.raccoonPeek != nil ? "Click to dismiss" : "Click to show the focus panel")
+            let toolTip = model.raccoonPeek == nil ? "Click to show the focus panel"
+                : actions.isEmpty ? "Click to dismiss" : "Click the message to dismiss"
+            stage?.setBubble(message, actions: actions, toolTip: toolTip)
         }
     }
 
     /// Follows the pointer onto and off the raccoon, ticking the hover
     /// bubble's time once a second only while it is there.
     private func setHovered(_ hovered: Bool) {
+        if hovered != isHovered, model.raccoonPeek != nil {
+            if hovered { holdPeekClock() } else { runPeekClock() }
+        }
         isHovered = hovered
         hoverTimer?.invalidate()
         hoverTimer = nil

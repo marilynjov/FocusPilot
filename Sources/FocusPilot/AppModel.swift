@@ -62,6 +62,13 @@ final class AppModel {
     @ObservationIgnored var lastBlockedVisitAt: Date?
     /// Blocked pages Chrome had shown at the last look; nil before the first.
     @ObservationIgnored var chromeBlockedPagesSeen: Int?
+    /// Time "+10 min" added to each session, so its end warning comes back
+    /// before the new end. In memory, like `raccoonShownMoments`.
+    @ObservationIgnored var raccoonExtensions: [UUID: TimeInterval] = [:]
+    /// Counts plan reads, so an older read finishing late is dropped.
+    @ObservationIgnored var raccoonPlanReads = 0
+    /// Looks for time-based moments; see `followRaccoonMoments`.
+    @ObservationIgnored var raccoonMomentsTask: Task<Void, Never>?
     /// The raccoon shows in the planning window while the owner is looking
     /// at it, and on screen otherwise (owner request, 2026-11-02).
     var raccoonIsInWindow: Bool { isPlanningWindowOpen && isPlanningWindowInFront }
@@ -242,7 +249,8 @@ final class AppModel {
         Task { [weak self] in
             while let self {
                 try? await Task.sleep(for: .seconds(1))
-                if snapshot.activeSession != nil || snapshot.quickTimer != nil || menuBarStatus().timeText != nil {
+                if snapshot.activeSession != nil || snapshot.quickTimer != nil || menuBarStatus().timeText != nil
+                    || keepGoingOffer != nil {
                     now = .now
                 }
             }
