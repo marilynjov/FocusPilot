@@ -34,6 +34,11 @@ final class FocusPanelController {
         }
     }
 
+    private func closeFromRaccoon() {
+        isOpenedFromRaccoon = false
+        update()
+    }
+
     /// Opens the panel just above the raccoon at `raccoonFrame`, or closes it.
     func toggleFromRaccoon(above raccoonFrame: NSRect) {
         isOpenedFromRaccoon.toggle()
@@ -60,7 +65,11 @@ final class FocusPanelController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         var fit: () -> Void = {}
-        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }).paletteTheme(model.displayPreferences))
+        // Opened from the raccoon, the corner button closes the panel; the
+        // raccoon already plays the pill's part.
+        let close: (() -> Void)? = isOpenedFromRaccoon ? { [weak self] in self?.closeFromRaccoon() } : nil
+        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }, onClose: close)
+            .paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         if panel.setFrameUsingName("FocusPanel") {
@@ -101,13 +110,16 @@ struct FocusPanelView: View {
     let model: AppModel
     /// Asks the panel to fit the new size after collapsing or expanding.
     var onResize: () -> Void = {}
+    /// When set, the corner button closes the panel instead of collapsing it.
+    var onClose: (() -> Void)?
     @State private var isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
 
-    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}) {
+    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}, onClose: (() -> Void)? = nil) {
         self.model = model
         self.onResize = onResize
+        self.onClose = onClose
         _isCollapsed = State(initialValue: isCollapsed)
     }
 
@@ -126,12 +138,12 @@ struct FocusPanelView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
                     SessionHeader(session: session, now: model.now, timeFont: .title3.weight(.semibold))
-                    Button { isCollapsed = true } label: {
-                        Image(systemName: "chevron.down")
+                    Button { if let onClose { onClose() } else { isCollapsed = true } } label: {
+                        Image(systemName: onClose == nil ? "chevron.down" : "xmark")
                     }
                     .buttonStyle(.borderless)
-                    .help("Collapse")
-                    .accessibilityLabel("Collapse")
+                    .help(onClose == nil ? "Collapse" : "Close")
+                    .accessibilityLabel(onClose == nil ? "Collapse" : "Close")
                 }
                 Text(session.action)
                     .font(.headline)
