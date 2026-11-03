@@ -151,6 +151,12 @@ extension AppModel {
         }
     }
 
+    /// "Take a Break" for `minutes`: the countdown stands still meanwhile
+    /// (owner request, 2026-11-03).
+    func takeBreak(minutes: Int) async {
+        await run { try await $0.takeBreak(duration: TimeInterval(minutes * 60)) }
+    }
+
     /// "Back to task": ends the break early.
     func endBreak() async {
         await run { try await $0.endBreak() }

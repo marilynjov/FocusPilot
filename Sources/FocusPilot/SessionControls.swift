@@ -1,9 +1,9 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Pause or Resume (Back to Task on a break), +10 min, and Complete, for
-/// the active session, and Keep Going for a minute after one reached its
-/// end. Shared by the menu bar popover, the focus panel and the Now card,
+/// Take a Break (Back to Task on a break, Resume if paused), +10 min, and
+/// Complete, for the active session, and Keep Going for a minute after one
+/// reached its end. Shared by the menu bar popover, the focus panel and the Now card,
 /// so they behave the same.
 ///
 /// Completing a strict session before its planned end first asks for
@@ -89,9 +89,17 @@ struct SessionControls: View {
                 Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
             }
         } else {
-            Button { Task { await model.pause() } } label: {
-                Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
+            // Take a Break replaces Pause (owner request, 2026-11-03): the
+            // countdown stands still for the break. A session paused before
+            // this still shows Resume above.
+            Menu {
+                ForEach(RaccoonMoments.breakChoices, id: \.self) { minutes in
+                    Button("\(minutes) minutes") { Task { await model.takeBreak(minutes: minutes) } }
+                }
+            } label: {
+                Label("Take a Break", systemImage: "cup.and.saucer").frame(maxWidth: .infinity)
             }
+            .help("Stops the countdown for a short break")
             .disabled(session.phase != .running)
         }
     }

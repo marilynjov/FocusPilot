@@ -65,6 +65,8 @@ final class AppModel {
     /// Time "+10 min" added to each session, so its end warning comes back
     /// before the new end. In memory, like `raccoonShownMoments`.
     @ObservationIgnored var raccoonExtensions: [UUID: TimeInterval] = [:]
+    /// The last break the owner took that ran out, for "Break's over".
+    @ObservationIgnored var raccoonEndedBreak: RaccoonMoments.EndedBreak?
     /// Counts plan reads, so an older read finishing late is dropped.
     @ObservationIgnored var raccoonPlanReads = 0
     /// Looks for time-based moments; see `followRaccoonMoments`.
@@ -263,6 +265,7 @@ final class AppModel {
         now = .now
         guard latest.revision >= snapshot.revision else { return }
         noticeWrapUp(from: snapshot.session, to: latest.session)
+        noteRaccoonBreakEnd(from: snapshot.session, to: latest.session)
         snapshot = latest
         if latest.activeSession == nil || latest.earlyEndAvailableAt != nil {
             isConfirmingEarlyEnd = false

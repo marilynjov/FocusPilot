@@ -25,6 +25,7 @@ extension AppModel {
         let now = Date.now
         guard let moment = RaccoonMoments.next(mode: displayPreferences.raccoonMode, session: session,
                                                extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
+                                               endedBreak: raccoonEndedBreak,
                                                plan: raccoonPlan, runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
                                                shown: raccoonShownMoments, at: now, timeZone: .autoupdatingCurrent)
         else { return }
@@ -33,6 +34,14 @@ extension AppModel {
         raccoonShownMoments = raccoonShownMoments.filter { now.timeIntervalSince($0.value) < 86_400 }
         raccoonShownMoments[moment.id] = now
         raccoon.show(moment)
+    }
+
+    /// Notes a break the owner took that ran out, for "Break's over". One
+    /// ended with Back to Task, before its end, is not noted.
+    func noteRaccoonBreakEnd(from old: FocusSession?, to new: FocusSession?) {
+        guard let old, let new, old.id == new.id, case .onBreak(let until, true) = old.phase else { return }
+        if case .onBreak = new.phase { return }
+        if Date.now >= until { raccoonEndedBreak = RaccoonMoments.EndedBreak(sessionID: new.id, until: until) }
     }
 
     /// A blocked app was hidden, or Chrome showed its blocked page.
@@ -91,6 +100,9 @@ extension AppModel {
         case .keepGoing(let minutes):
             raccoon.endPeek(reevaluating: false)
             Task { await keepGoing(minutes: minutes) }
+        case .takeBreak(let minutes):
+            raccoon.endPeek(reevaluating: false)
+            Task { await takeBreak(minutes: minutes) }
         case .backToTask:
             raccoon.endPeek(reevaluating: false)
             Task { await endBreak() }
