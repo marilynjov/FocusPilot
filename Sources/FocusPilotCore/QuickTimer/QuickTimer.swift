@@ -25,8 +25,9 @@ public struct QuickTimer: Equatable, Sendable, Identifiable {
         public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    /// Proposed presets (decision 0004).
-    public static let presetMinutes = [10, 20, 30, 45]
+    /// Presets; any other length is typed in (owner request, 2026-11-03:
+    /// fewer choices than decision 0004's proposed 10, 20, 30 and 45).
+    public static let presetMinutes = [10, 20]
     /// Lengths a custom timer may have.
     public static let minutesRange = 1...240
     /// The "2 minutes left" notice. A timer this short or shorter has none.

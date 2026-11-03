@@ -57,7 +57,7 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - The raccoon has three presence modes: stays on screen, peeks in for reminders only, and off. It lives in a borderless, transparent, always-on-top window that lets clicks pass through except on the raccoon and its speech bubble (see the 2026-11-02 On screen entry above; validate on macOS 26, including full-screen apps and multiple displays).
 - Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The macOS accessibility setting Reduce motion turns all raccoon motion off.
 - Raccoon moments: peek in at 10 minutes left, work alongside during focus, walk in 2 minutes before a break, coffee during breaks, nap at lunch, celebrate a finished block, cheer with "You got this" when a blocked site is opened, and change poses between blocks.
-- Quick timer presets: 10, 20, 30 and 45 minutes; the raccoon warns at 2 minutes left.
+- Quick timer presets: 10 and 20 minutes, with any other length typed in (owner decision, 2026-11-03; first proposed as 10, 20, 30 and 45); the raccoon warns at 2 minutes left.
 - Stats count only time in planned blocks and quick timers, never total screen time, and show what was done next to the time (from wrap-ups and finished blocks), because time in a block is not proof of output ([Product](../PRODUCT.md#principles), principle 8). The planner may propose a buffer from past estimate accuracy ("big tasks take you about 20% longer"); it never changes plans without approval.
 
 ## Conflicts with earlier decisions
