@@ -12,12 +12,16 @@ public struct SessionPolicy: Equatable, Sendable {
     /// Set during a normal-session break: session rules are lifted until this
     /// instant, then apply again even if the app has crashed in between.
     public var resumesAt: Date?
+    /// Set while a strict session is paused: its countdown stands still, so
+    /// the blocked page shows `end - pausedSince` left, not a ticking time.
+    public var pausedSince: Date?
 
-    public init(sessionID: UUID, mode: SessionMode, end: Date, resumesAt: Date? = nil) {
+    public init(sessionID: UUID, mode: SessionMode, end: Date, resumesAt: Date? = nil, pausedSince: Date? = nil) {
         self.sessionID = sessionID
         self.mode = mode
         self.end = end
         self.resumesAt = resumesAt
+        self.pausedSince = pausedSince
     }
 }
 

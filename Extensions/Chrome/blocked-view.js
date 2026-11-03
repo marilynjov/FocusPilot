@@ -128,8 +128,11 @@ var FocusBlockedView = (() => {
     const offlineHint = offline ? "FocusPilot isn't running. Open it from Applications or Spotlight to request an exception." : null;
 
     if (FocusPolicy.sessionApplies(session, now) && delivery.focus) {
-      const remaining = Date.parse(session.end) - now;
-      const status = remaining > 0 ? `Focus session · ${left(remaining / 1000)} left` : "Strict session · past its planned end";
+      // A paused strict session's countdown stands still until it resumes.
+      const paused = session.pausedSince ? Date.parse(session.pausedSince) : null;
+      const remaining = Date.parse(session.end) - (paused ?? now);
+      const status = remaining <= 0 ? "Strict session · past its planned end"
+        : paused ? `Focus session paused · ${left(remaining / 1000)} left` : `Focus session · ${left(remaining / 1000)} left`;
       return {
         kind: "session", domain, status: { tone: "accent", text: status }, eyebrow: "You're working on",
         title: delivery.focus.title, subtitle: delivery.focus.nextAction ?? delivery.focus.projectTitle ?? null,
