@@ -16,6 +16,9 @@ final class FocusPanelController {
     /// Opened from a click on the floating raccoon; closed by another click,
     /// or when the raccoon leaves the screen.
     private var isOpenedFromRaccoon = false
+    /// Whether the panel on screen was built to open from the raccoon, so a
+    /// mode change rebuilds it with the right corner button.
+    private var panelIsFromRaccoon = false
 
     init(model: AppModel) {
         self.model = model
@@ -23,10 +26,15 @@ final class FocusPanelController {
 
     /// Shows the panel while a session is active and the owner wants it.
     func update() {
-        if !model.raccoon.isOnScreen || model.snapshot.activeSession == nil { isOpenedFromRaccoon = false }
+        let standsIn = model.raccoon.standsInForFocusPanel
+        if !standsIn || !model.raccoon.isOnScreen || model.snapshot.activeSession == nil { isOpenedFromRaccoon = false }
         let wanted = model.snapshot.activeSession != nil
-            && (model.displayPreferences.raccoonMode == .staysOnScreen ? isOpenedFromRaccoon : model.menuBarPreferences.showsFocusPanel)
-        if wanted, panel == nil {
+            && (standsIn ? isOpenedFromRaccoon : model.menuBarPreferences.showsFocusPanel)
+        if wanted, let panel, panelIsFromRaccoon != isOpenedFromRaccoon {
+            panel.orderOut(nil)
+            self.panel = nil
+            show()
+        } else if wanted, panel == nil {
             show()
         } else if !wanted, let panel {
             panel.orderOut(nil)
@@ -43,7 +51,13 @@ final class FocusPanelController {
     func toggleFromRaccoon(above raccoonFrame: NSRect) {
         isOpenedFromRaccoon.toggle()
         update()
-        guard isOpenedFromRaccoon, let panel else { return }
+        moveAboveRaccoon(raccoonFrame)
+    }
+
+    /// Keeps a panel opened from the raccoon just above it when the raccoon
+    /// moves.
+    func moveAboveRaccoon(_ raccoonFrame: NSRect) {
+        guard isOpenedFromRaccoon, panelIsFromRaccoon, let panel else { return }
         var frame = panel.frame
         frame.origin = NSPoint(x: raccoonFrame.maxX - frame.width, y: raccoonFrame.maxY + 4)
         if let visible = (NSScreen.screens.first { $0.frame.intersects(raccoonFrame) } ?? NSScreen.main)?.visibleFrame {
@@ -72,18 +86,24 @@ final class FocusPanelController {
             .paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
-        if panel.setFrameUsingName("FocusPanel") {
-            // Keep only the saved place: a saved size can be too small for
-            // the time and task now shown, which cut the pill off.
-            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        // Only the owner's own panel remembers its place; one opened from the
+        // raccoon is placed above it and must not overwrite that place.
+        if !isOpenedFromRaccoon {
+            if panel.setFrameUsingName("FocusPanel") {
+                // Keep only the saved place: a saved size can be too small for
+                // the time and task now shown, which cut the pill off.
+                let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+                panel.setContentSize(host.fittingSize)
+                panel.setFrameTopLeftPoint(top)
+            } else if let screen = NSScreen.main?.visibleFrame {
+                panel.setContentSize(host.fittingSize)
+                panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
+            }
+            Self.keepOnScreen(panel)
+            panel.setFrameAutosaveName("FocusPanel")
+        } else {
             panel.setContentSize(host.fittingSize)
-            panel.setFrameTopLeftPoint(top)
-        } else if let screen = NSScreen.main?.visibleFrame {
-            panel.setContentSize(host.fittingSize)
-            panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
-        Self.keepOnScreen(panel)
-        panel.setFrameAutosaveName("FocusPanel")
         // Collapsing to the pill and expanding again size the panel to fit.
         // A panel in the right half of its screen keeps its top-right corner,
         // so the pill stays near the edge; otherwise the top-left corner.
@@ -98,6 +118,7 @@ final class FocusPanelController {
         }
         panel.orderFrontRegardless()
         self.panel = panel
+        panelIsFromRaccoon = isOpenedFromRaccoon
     }
 
     /// The screen the panel is on, else the main screen.
