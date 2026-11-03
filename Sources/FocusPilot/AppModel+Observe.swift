@@ -35,6 +35,7 @@ extension AppModel {
     /// While blocking, the owner brought a blocked app forward and it was hidden.
     func noteBlockedApp(_ bundleID: String) {
         store(ActivityRecord(events: [activityTracker.blockedApp(bundleID, at: .now)]))
+        noteBlockedVisit()
     }
 
     func followActivity(location: StorageLocation) {

@@ -1,7 +1,7 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Pause or Resume, and Complete, for the active session. Shared by the menu
+/// Pause or Resume, +10 min, and Complete, for the active session. Shared by the menu
 /// bar popover, the focus panel and the Now card, so they behave the same.
 ///
 /// Completing a strict session before its planned end first asks for
@@ -11,7 +11,8 @@ import SwiftUI
 ///
 /// A session started by a plan block (D3) offers "Done early", which ends
 /// the block and the session, and "I need more time", which is recorded
-/// for replanning (D10) while the block keeps its end.
+/// for replanning (D10) while the block keeps its end. "+10 min" on a
+/// block's session records that too, and moves the session's end.
 struct SessionControls: View {
     let model: AppModel
     /// Off where the return cue is already on screen, as in the Now card.
@@ -31,6 +32,10 @@ struct SessionControls: View {
                     }
                     HStack(spacing: 8) {
                         pauseButton(session)
+                        Button { Task { await model.extend(minutes: RaccoonMoments.extraMinutes) } } label: {
+                            Text("+\(RaccoonMoments.extraMinutes) min").frame(maxWidth: .infinity)
+                        }
+                        .help("Adds \(RaccoonMoments.extraMinutes) minutes to this session")
                         Button { Task { await model.complete() } } label: {
                             Label(planRun == nil ? "Complete" : "Done early", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity)
@@ -56,8 +61,7 @@ struct SessionControls: View {
             Button { Task { await model.requestMoreTime() } } label: { wide("I need more time") }
                 .help("Notes that this block needs more time. The block still ends on time for now.")
         } else {
-            Label("More time noted. This block still ends on time; changing the plan for it comes later.",
-                  systemImage: "clock.badge.checkmark")
+            Label("More time noted for when the plan is changed.", systemImage: "clock.badge.checkmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

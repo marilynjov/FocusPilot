@@ -96,9 +96,13 @@ final class RaccoonCompanionController {
         if let presence { show(presence) } else { hide() }
     }
 
+    /// The moment the raccoon is peeking in for (D12), if any.
+    private(set) var moment: RaccoonMoment?
+
     /// Brings the raccoon in with `peek` for `duration` (D12 reminders),
     /// replacing any earlier peek. In Off mode nothing shows.
     func peek(_ peek: RaccoonPeek, for duration: Duration = defaultPeek) {
+        moment = nil
         model.raccoonPeek = peek
         peekTask?.cancel()
         peekTask = Task { [weak self] in
@@ -109,11 +113,21 @@ final class RaccoonCompanionController {
         update()
     }
 
-    func endPeek() {
+    /// Peeks in for `moment` for as long as it asks.
+    func show(_ moment: RaccoonMoment) {
+        peek(moment.peek, for: .seconds(moment.duration))
+        self.moment = moment
+    }
+
+    /// Ends the peek, then shows any moment that waited for it unless
+    /// `reevaluating` is false.
+    func endPeek(reevaluating: Bool = true) {
         peekTask?.cancel()
         peekTask = nil
+        moment = nil
         model.raccoonPeek = nil
         update()
+        if reevaluating { model.evaluateRaccoonMoments() }
     }
 
     /// The bundled art, loaded once and shared with the planning window.
@@ -155,12 +169,14 @@ final class RaccoonCompanionController {
         model.focusPanel.update()
     }
 
-    /// A peek's message, else the time and task while the pointer is over
-    /// the raccoon (owner request, 2026-11-02), else no bubble.
+    /// A peek's message and buttons, else the time and task while the
+    /// pointer is over the raccoon (owner request, 2026-11-02), else no bubble.
     private func refreshBubble() {
         let message = shown?.message ?? (isHovered ? hoverText : nil)
-        if stage?.bubbleMessage != message {
-            stage?.setBubble(message, toolTip: model.raccoonPeek != nil ? "Click to dismiss" : "Click to show the focus panel")
+        let actions = shown?.message != nil ? model.raccoonPeek?.actions ?? [] : []
+        if stage?.bubbleMessage != message || stage?.bubbleActions != actions {
+            stage?.setBubble(message, actions: actions,
+                             toolTip: model.raccoonPeek != nil ? "Click to dismiss" : "Click to show the focus panel")
         }
     }
 
@@ -206,6 +222,7 @@ final class RaccoonCompanionController {
             if model.raccoonPeek != nil { endPeek() } else { toggleFocusPanel() }
         }
         stage.onRaccoonClick = { [weak self] in self?.toggleFocusPanel() }
+        stage.onBubbleAction = { [weak self] action in self?.model.performRaccoonAction(action) }
         let panel = RaccoonPanel(contentRect: NSRect(origin: .zero, size: stage.frame.size),
                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isFloatingPanel = true
@@ -326,12 +343,14 @@ final class RaccoonPanel: NSPanel {
 /// optional speech bubble above it.
 @MainActor
 final class RaccoonStageView: NSView {
-    static let bubbleHeight: CGFloat = 64
+    /// Room for a bubble of up to three lines with a row of buttons.
+    static let bubbleHeight: CGFloat = 104
 
     let frameSize: CGFloat
     let sideRoom: CGFloat
     let pointsPerPixel: CGFloat
     var onBubbleClick: (() -> Void)?
+    var onBubbleAction: ((RaccoonPeekAction) -> Void)?
     /// A click on the raccoon itself; nil leaves clicks passing through.
     var onRaccoonClick: (() -> Void)?
     private let poseLayer = CALayer()
@@ -363,13 +382,14 @@ final class RaccoonStageView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
-        if let bubble, bubble.frame.contains(local) { return bubble }
+        if let bubble, bubble.frame.contains(local) { return bubble.hitTest(local) }
         if onRaccoonClick != nil, raccoonHitFrame.contains(local) { return self }
         return nil
     }
 
     var bubbleFrame: NSRect? { bubble?.frame }
     var bubbleMessage: String? { bubble?.message }
+    var bubbleActions: [RaccoonPeekAction] { bubble?.actions ?? [] }
     /// Where the raccoon is drawn, in this view's coordinates.
     var poseFrame: NSRect { poseLayer.frame }
     /// The part of `poseFrame` that takes the pointer: inset 15% on each
@@ -409,10 +429,11 @@ final class RaccoonStageView: NSView {
         return NSPoint(x: x, y: frameSize * pointsPerPixel - 4)
     }
 
-    /// Shows `message` in the bubble. A bubble already shown changes its
-    /// text in place, so the time ticking while hovered does not redraw it.
-    func setBubble(_ message: String?, toolTip: String? = nil) {
-        if let message, let bubble {
+    /// Shows `message` in the bubble, with a button per action. A bubble
+    /// already shown with the same buttons changes its text in place, so the
+    /// time ticking while hovered does not redraw it.
+    func setBubble(_ message: String?, actions: [RaccoonPeekAction] = [], toolTip: String? = nil) {
+        if let message, let bubble, bubble.actions == actions {
             bubble.setMessage(message)
             bubble.toolTip = toolTip
             bubble.setFrameOrigin(bubbleOrigin(width: bubble.frame.width))
@@ -421,49 +442,78 @@ final class RaccoonStageView: NSView {
         bubble?.removeFromSuperview()
         bubble = nil
         if let message {
-            let view = RaccoonBubbleView(message: message, maxWidth: bounds.width)
+            let view = RaccoonBubbleView(message: message, actions: actions, maxWidth: bounds.width)
             view.setFrameOrigin(bubbleOrigin(width: view.frame.width))
             view.toolTip = toolTip
             view.onClick = { [weak self] in self?.onBubbleClick?() }
+            view.onAction = { [weak self] action in self?.onBubbleAction?(action) }
             addSubview(view)
             bubble = view
         }
     }
 }
 
-/// The speech bubble: a placeholder for D12's reminders. Clicking it ends
-/// the peek. It accepts the first click, since its panel is never key.
+/// The speech bubble: a message and, for some reminders (D12), a row of
+/// buttons under it. Clicking elsewhere on it ends the peek. It and its
+/// buttons accept the first click, since its panel is never key.
 final class RaccoonBubbleView: NSView {
+    static let padding = NSSize(width: 12, height: 8)
+    static let buttonSpacing: CGFloat = 6
+
     var onClick: (() -> Void)?
+    var onAction: ((RaccoonPeekAction) -> Void)?
     private(set) var message: String
+    let actions: [RaccoonPeekAction]
     private let label: NSTextField
+    private let buttons: [RaccoonBubbleButton]
     private let maxWidth: CGFloat
 
-    init(message: String, maxWidth: CGFloat) {
+    init(message: String, actions: [RaccoonPeekAction] = [], maxWidth: CGFloat) {
         self.message = message
+        self.actions = actions
         self.maxWidth = maxWidth
         label = NSTextField(wrappingLabelWithString: message)
         label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         label.textColor = .labelColor
-        label.preferredMaxLayoutWidth = maxWidth - 24
+        label.preferredMaxLayoutWidth = maxWidth - 2 * Self.padding.width
         label.isSelectable = false
+        buttons = actions.map { RaccoonBubbleButton(action: $0) }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.borderWidth = 1
         addSubview(label)
+        for button in buttons {
+            button.target = self
+            button.action = #selector(pressed(_:))
+            addSubview(button)
+        }
         setAccessibilityElement(true)
-        setAccessibilityRole(.button)
+        setAccessibilityRole(actions.isEmpty ? .button : .group)
         setMessage(message)
     }
 
-    /// Changes the text and fits the bubble to it.
+    /// Changes the text and fits the bubble to it, buttons right-aligned
+    /// below.
     func setMessage(_ message: String) {
         self.message = message
         label.stringValue = message
-        let size = label.fittingSize
-        setFrameSize(NSSize(width: min(size.width + 24, maxWidth), height: min(size.height + 16, RaccoonStageView.bubbleHeight)))
-        label.frame = bounds.insetBy(dx: 12, dy: 8)
+        let text = label.fittingSize
+        let row = buttons.map(\.fittingSize)
+        let rowWidth = row.map(\.width).reduce(0, +) + Self.buttonSpacing * CGFloat(max(row.count - 1, 0))
+        let rowHeight = row.map(\.height).max().map { $0 + Self.buttonSpacing } ?? 0
+        let pad = Self.padding
+        let width = min(max(text.width, rowWidth) + 2 * pad.width, maxWidth)
+        let height = min(text.height + rowHeight + 2 * pad.height, RaccoonStageView.bubbleHeight)
+        setFrameSize(NSSize(width: width, height: height))
+        label.frame = NSRect(x: pad.width, y: pad.height + rowHeight, width: width - 2 * pad.width,
+                             height: height - rowHeight - 2 * pad.height)
+        var x = width - pad.width
+        for (button, size) in zip(buttons, row).reversed() {
+            x -= size.width
+            button.frame = NSRect(x: x, y: pad.height, width: size.width, height: size.height)
+            x -= Self.buttonSpacing
+        }
         setAccessibilityLabel(message)
     }
 
@@ -477,8 +527,11 @@ final class RaccoonBubbleView: NSView {
 
     override var wantsUpdateLayer: Bool { true }
 
+    /// A button takes its own clicks; anywhere else on the bubble is the bubble.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        frame.contains(point) ? self : nil
+        guard frame.contains(point) else { return nil }
+        if let hit = super.hitTest(point), hit is NSButton { return hit }
+        return self
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -491,6 +544,29 @@ final class RaccoonBubbleView: NSView {
         onClick?()
         return true
     }
+
+    @objc private func pressed(_ sender: RaccoonBubbleButton) {
+        onAction?(sender.peekAction)
+    }
+}
+
+/// A small button under the bubble's message.
+final class RaccoonBubbleButton: NSButton {
+    let peekAction: RaccoonPeekAction
+
+    init(action: RaccoonPeekAction) {
+        peekAction = action
+        super.init(frame: .zero)
+        title = action.title
+        bezelStyle = .push
+        controlSize = .small
+        font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Builds a pose's layer tree. Coordinates in `raccoon.json` are art

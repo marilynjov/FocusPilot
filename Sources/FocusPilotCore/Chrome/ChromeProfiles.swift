@@ -18,6 +18,9 @@ public struct ChromeProfileStatus: Equatable, Sendable, Identifiable {
     public var incognitoAllowed: Bool
     public var allSitesAccess: Bool
     public var missingObservations: Int
+    /// Times Chrome showed FocusPilot's blocked page in this profile; the
+    /// raccoon cheers when it grows (D12).
+    public var blockedPagesShown = 0
     public var id: String { profileID }
 
     public static func text(_ state: State) -> String {
@@ -47,7 +50,8 @@ public enum ChromeProfiles {
                 ChromeProfileStatus(profileID: record.profileID,
                                     state: state(record, currentRevision, currentSource, isRunning),
                                     incognitoAllowed: record.incognitoAllowed, allSitesAccess: record.allSitesAccess,
-                                    missingObservations: record.missingObservations)
+                                    missingObservations: record.missingObservations,
+                                    blockedPagesShown: record.blockedPagesShown)
             }
     }
 

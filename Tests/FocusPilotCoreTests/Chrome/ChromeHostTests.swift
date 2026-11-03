@@ -162,6 +162,9 @@ struct ChromeHostTests {
         #expect(harness.sent("ack").map { $0["seq"] as? Int } == [1, 2])
         #expect(try harness.record()?.lastSeq == 2)
         #expect(try harness.record()?.blockedPagesShown == 1)
+        // The app reads the count to cheer on a blocked page (D12).
+        let statuses = try ChromeProfiles.statuses(location: harness.location, currentRevision: nil, isRunning: { _ in true })
+        #expect(statuses.map(\.blockedPagesShown) == [1])
     }
 
     @Test func aResentObservationIsAcknowledgedAgainButCountedOnce() throws {

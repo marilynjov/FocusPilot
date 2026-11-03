@@ -52,6 +52,16 @@ final class AppModel {
     }
     /// The reminder the raccoon is peeking in with (D12), if any.
     var raccoonPeek: RaccoonPeek?
+    /// Today's plan and its block runs, for the raccoon's moments and its
+    /// lunch nap; see `AppModel+Raccoon.swift`.
+    var raccoonPlan: DayPlan?
+    @ObservationIgnored var raccoonPlanRuns: [PlanRun] = []
+    /// Moments already shown and when, kept in memory only, so each shows once.
+    @ObservationIgnored var raccoonShownMoments: [RaccoonMoment.ID: Date] = [:]
+    /// When a blocked app was last hidden or Chrome last showed its blocked page.
+    @ObservationIgnored var lastBlockedVisitAt: Date?
+    /// Blocked pages Chrome had shown at the last look; nil before the first.
+    @ObservationIgnored var chromeBlockedPagesSeen: Int?
     /// The raccoon shows in the planning window while the owner is looking
     /// at it, and on screen otherwise (owner request, 2026-11-02).
     var raccoonIsInWindow: Bool { isPlanningWindowOpen && isPlanningWindowInFront }
@@ -142,6 +152,7 @@ final class AppModel {
         displayPreferences.raccoonModeDidChange = { [weak self] _ in
             self?.raccoon.update()
             self?.focusPanel.update()
+            Task { await self?.refreshRaccoonMoments() }
         }
         displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
         refreshRaccoonWindowState()
@@ -150,6 +161,7 @@ final class AppModel {
         tickWhileTimeIsShown()
         watchHerdr()
         followSessions()
+        followRaccoonMoments()
     }
 
     /// Answers the focuspilot CLI, and imports what it queued while the app

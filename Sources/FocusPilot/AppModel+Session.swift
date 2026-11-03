@@ -7,7 +7,11 @@ import FocusPilotCore
 extension AppModel {
     /// What the current focus session is doing, for the raccoon; nil
     /// when there is none.
-    var raccoonActivity: RaccoonActivity? { RaccoonActivity(snapshot.activeSession?.phase) }
+    var raccoonActivity: RaccoonActivity? {
+        let session = snapshot.activeSession
+        return RaccoonActivity(session?.phase, isLunch: RaccoonMoments.isOnLunch(session, plan: raccoonPlan, runs: raccoonRuns,
+                                                                               at: .now, timeZone: .autoupdatingCurrent))
+    }
 
     /// The task a new session would run on: the pinned Now task.
     var nowTask: TodayItem? {
@@ -33,7 +37,9 @@ extension AppModel {
                 scheduleReconcile(at: snapshot.nextDeadline)
                 scheduleQuickTimerReconcile(at: snapshot.quickTimer?.nextDeadline)
                 focusPanel.update()
+                await refreshRaccoonPlan()
                 raccoon.update()
+                evaluateRaccoonMoments()
                 // Rules name the apps the Apps line shows; every rule edit publishes a policy.
                 if snapshot.policy?.revision != policyRevision {
                     policyRevision = snapshot.policy?.revision
@@ -108,6 +114,22 @@ extension AppModel {
     /// "I need more time" on a plan block's session: recorded only (D3).
     func requestMoreTime() async {
         await run { try await $0.requestMoreTime() }
+    }
+
+    /// "+10 min" on the session under way, running, paused or on a break.
+    /// On a plan block's session it also notes that the block needed more time.
+    func extend(minutes: Int) async {
+        await run { try await $0.extend(by: TimeInterval(minutes * 60)) }
+    }
+
+    /// "Keep going" once a session has ended: the same task and mode again.
+    func keepGoing(minutes: Int) async {
+        await run { try await $0.keepGoing(duration: TimeInterval(minutes * 60)) }
+    }
+
+    /// "Back to task": ends the break early.
+    func endBreak() async {
+        await run { try await $0.endBreak() }
     }
 
     func cancelEarlyEnd() async {
