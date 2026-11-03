@@ -82,26 +82,37 @@ final class FocusPanelController {
             panel.setContentSize(host.fittingSize)
             panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
-        // Keep it whole on a connected screen, e.g. after a display was
-        // removed or the small pill was left near an edge.
-        let visible = (NSScreen.screens.first { $0.frame.intersects(panel.frame) } ?? NSScreen.main)?.visibleFrame
-        if let visible {
-            var frame = panel.frame
-            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
-            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
-            panel.setFrame(frame, display: false)
-        }
+        Self.keepOnScreen(panel)
         panel.setFrameAutosaveName("FocusPanel")
-        // Collapsing to the pill and expanding again size the panel to fit,
-        // keeping its top-left corner where it is.
+        // Collapsing to the pill and expanding again size the panel to fit.
+        // A panel in the right half of its screen keeps its top-right corner,
+        // so the pill stays near the edge; otherwise the top-left corner.
         fit = { [weak panel, weak host] in
             guard let panel, let host else { return }
-            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            let frame = panel.frame
+            let anchorsRight = Self.screen(for: panel).map { frame.midX > $0.visibleFrame.midX } ?? false
             panel.setContentSize(host.fittingSize)
-            panel.setFrameTopLeftPoint(top)
+            let x = anchorsRight ? frame.maxX - panel.frame.width : frame.minX
+            panel.setFrameTopLeftPoint(NSPoint(x: x, y: frame.maxY))
+            Self.keepOnScreen(panel)
         }
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    /// The screen the panel is on, else the main screen.
+    private static func screen(for panel: NSPanel) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.intersects(panel.frame) } ?? NSScreen.main
+    }
+
+    /// Keeps the panel whole on a connected screen, e.g. after a display was
+    /// removed, or after the pill was left near an edge and then expanded.
+    private static func keepOnScreen(_ panel: NSPanel) {
+        guard let visible = screen(for: panel)?.visibleFrame else { return }
+        var frame = panel.frame
+        frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        panel.setFrame(frame, display: true)
     }
 }
 
