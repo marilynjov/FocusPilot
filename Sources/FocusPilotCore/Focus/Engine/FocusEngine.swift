@@ -25,18 +25,24 @@ public enum FocusEngine {
         }
 
         // A pause stops the countdown (owner decision, 2026-11-02): resuming
-        // moves the planned end later by the pause. Breaks come from the day
-        // plan, which already set their time aside, so they move nothing.
+        // moves the planned end later by the pause. So does a break the owner
+        // takes (2026-11-03): it moves the end later by its length, and ending
+        // it early gives back the part not taken. Plan breaks come from the
+        // day plan, which already set their time aside, so they move nothing.
         switch (event, session.phase) {
         case (.pause, .running):
             session.phase = .paused(since: now)
         case (.resume, .paused(let since)):
             session.plannedEnd += now.timeIntervalSince(since)
             session.phase = .running
-        case (.startBreak(let duration), .running):
+        case (.startBreak(let duration, let movesEnd), .running):
             guard duration > 0 else { throw .nonPositiveDuration }
-            session.phase = .onBreak(until: now.addingTimeInterval(duration))
-        case (.endBreak, .onBreak):
+            session.phase = .onBreak(until: now.addingTimeInterval(duration), movesEnd: movesEnd)
+            if movesEnd { session.plannedEnd += duration }
+        case (.endBreak, .onBreak(let until, let movesEnd)):
+            if movesEnd {
+                session.plannedEnd = max(now, session.plannedEnd - max(0, until.timeIntervalSince(now)))
+            }
             session.phase = .running
         case (.extend(let interval), .running), (.extend(let interval), .paused), (.extend(let interval), .onBreak):
             guard interval > 0 else { throw .nonPositiveDuration }
@@ -108,7 +114,7 @@ public enum FocusEngine {
         let resumesAt: Date?
         switch (session.phase, session.mode) {
         case (.running, _), (.paused, .strict), (.onBreak, .strict): resumesAt = nil
-        case (.onBreak(let until), .normal): resumesAt = until
+        case (.onBreak(let until, _), .normal): resumesAt = until
         case (.paused, .normal), (.ended, _): return nil
         }
         let pausedSince: Date? = if case .paused(let since) = session.phase { since } else { nil }

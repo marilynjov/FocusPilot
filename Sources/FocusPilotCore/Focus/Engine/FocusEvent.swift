@@ -27,7 +27,9 @@ public enum FocusEvent: Equatable, Sendable {
     case start(SessionRequest)
     case pause
     case resume
-    case startBreak(duration: TimeInterval)
+    /// A plan break keeps the planned end; one the owner takes
+    /// (`movesEnd`, "Take a Break", 2026-11-03) moves it later by the break.
+    case startBreak(duration: TimeInterval, movesEnd: Bool = false)
     case endBreak
     /// "+10 min": moves the planned end later by the interval, while
     /// running, paused or on a break (owner request, 2026-11-02).

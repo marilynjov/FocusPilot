@@ -5,7 +5,7 @@ import Foundation
 /// previously saved sessions unreadable.
 extension SessionPhase: Codable {
     enum CodingKeys: String, CodingKey {
-        case kind, since, until, at, reason
+        case kind, since, until, movesEnd, at, reason
     }
 
     enum Kind: String, Codable {
@@ -20,7 +20,10 @@ extension SessionPhase: Codable {
         case .paused:
             self = .paused(since: try container.decode(Date.self, forKey: .since))
         case .onBreak:
-            self = .onBreak(until: try container.decode(Date.self, forKey: .until))
+            // Breaks stored before owner breaks existed (2026-11-03) were
+            // all plan breaks, which keep the planned end.
+            self = .onBreak(until: try container.decode(Date.self, forKey: .until),
+                            movesEnd: try container.decodeIfPresent(Bool.self, forKey: .movesEnd) ?? false)
         case .ended:
             self = .ended(
                 at: try container.decode(Date.self, forKey: .at),
@@ -37,9 +40,11 @@ extension SessionPhase: Codable {
         case .paused(let since):
             try container.encode(Kind.paused, forKey: .kind)
             try container.encode(since, forKey: .since)
-        case .onBreak(let until):
+        case .onBreak(let until, let movesEnd):
             try container.encode(Kind.onBreak, forKey: .kind)
             try container.encode(until, forKey: .until)
+            // Written only when set, so a plan break is stored as before.
+            if movesEnd { try container.encode(movesEnd, forKey: .movesEnd) }
         case .ended(let at, let reason):
             try container.encode(Kind.ended, forKey: .kind)
             try container.encode(at, forKey: .at)

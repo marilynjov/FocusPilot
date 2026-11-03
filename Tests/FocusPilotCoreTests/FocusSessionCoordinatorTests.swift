@@ -127,6 +127,25 @@ struct FocusSessionCoordinatorTests {
 
     // MARK: +10 min and Keep going (D12)
 
+    @Test func takingABreakStopsTheCountdownAndBackToTaskGivesBackTheRest() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        fixture.advance(minutes: 10)
+
+        try await fixture.coordinator.takeBreak(duration: 10 * 60)
+
+        let onBreak = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(onBreak.plannedEnd == wednesdayMorningInBogota.addingTimeInterval(35 * 60))
+        #expect(await fixture.publisher.published.last?.session?.resumesAt == fixture.clock.now.addingTimeInterval(10 * 60))
+
+        fixture.advance(minutes: 4)
+        try await fixture.coordinator.endBreak()
+
+        let back = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(back.phase == .running)
+        #expect(back.plannedEnd == wednesdayMorningInBogota.addingTimeInterval(29 * 60))
+    }
+
     @Test func moreTimeMovesThePlannedEndAndTheNextDeadline() async throws {
         let fixture = try await SessionFixture()
         try await fixture.coordinator.startSession(duration: 25 * 60, mode: .strict)

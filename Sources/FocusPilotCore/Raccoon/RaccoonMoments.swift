@@ -6,7 +6,7 @@ public struct RaccoonMoment: Equatable, Sendable {
     /// Lowest priority first: when several are due the last one shows, and
     /// a peek on screen gives way only to a later kind.
     public enum Kind: Int, CaseIterable, Comparable, Hashable, Sendable {
-        case nextBlock, blockedVisit, breakSoon, endWarning, breakStarted, finished, timesUp
+        case nextBlock, blockedVisit, breakSoon, endWarning, breakOver, breakStarted, finished, timesUp
 
         public static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -61,6 +61,21 @@ public enum RaccoonMoments {
     public static let timesUpDuration: TimeInterval = 60
     /// What "+10 min" and "Keep going" add.
     public static let extraMinutes = 10
+    /// The break the end warning offers (owner request, 2026-11-03).
+    public static let warningBreakMinutes = 5
+    /// What "Take a Break" offers.
+    public static let breakChoices = [5, 10, 15]
+
+    /// A break the owner took that ran out, as the app saw it end.
+    public struct EndedBreak: Equatable, Sendable {
+        public var sessionID: UUID
+        public var until: Date
+
+        public init(sessionID: UUID, until: Date) {
+            self.sessionID = sessionID
+            self.until = until
+        }
+    }
     public static let blockedCooldown: TimeInterval = 10 * 60
 
     /// The end warning comes 10 minutes before the end, or 2 minutes before
@@ -110,14 +125,19 @@ public enum RaccoonMoments {
 
     /// The moment to show now, if any. `session` is the latest one, which
     /// may have ended; `extended` is the time "+10 min" has added to it;
-    /// `shown` maps each moment shown to when it was.
+    /// `endedBreak` is the last owner break that ran out; `shown` maps each
+    /// moment shown to when it was.
     public static func next(mode: RaccoonCompanionMode, session: FocusSession?, extended: TimeInterval = 0,
-                            plan: DayPlan?, runs: [PlanRun], blockedVisitAt: Date?, shown: [RaccoonMoment.ID: Date],
-                            at now: Date, timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
+                            endedBreak: EndedBreak? = nil, plan: DayPlan?, runs: [PlanRun], blockedVisitAt: Date?,
+                            shown: [RaccoonMoment.ID: Date], at now: Date, timeZone: TimeZone,
+                            locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
         guard mode != .off else { return nil }
         var due: [RaccoonMoment] = []
         if let session {
             due += sessionMoments(session, extended: extended, plan: plan, runs: runs, at: now, timeZone: timeZone)
+        }
+        if let session, let moment = breakOver(endedBreak, session: session, at: now) {
+            due.append(moment)
         }
         if session?.hasEnded != false, let plan,
            let moment = nextBlock(plan, runs: runs, at: now, timeZone: timeZone, locale: locale) {
@@ -133,7 +153,7 @@ public enum RaccoonMoments {
     /// raccoon naps through it.
     public static func isOnLunch(_ session: FocusSession?, plan: DayPlan?, runs: [PlanRun], at now: Date,
                                  timeZone: TimeZone) -> Bool {
-        guard let session, case .onBreak = session.phase, let plan,
+        guard let session, case .onBreak(_, false) = session.phase, let plan,
               let current = currentBreak(of: session, plan: plan, runs: runs, at: now, timeZone: timeZone)
         else { return false }
         return isLunch(current, in: plan)
@@ -178,8 +198,10 @@ public enum RaccoonMoments {
                                        actions: [.keepGoing(minutes: extraMinutes), .done])
                 return [RaccoonMoment(id: .init(.timesUp, id), peek: peek, duration: timesUpDuration, sessionID: session.id)]
             }
-        case .onBreak(let until):
-            let current = plan.flatMap { currentBreak(of: session, plan: $0, runs: runs, at: now, timeZone: timeZone) }
+        case .onBreak(let until, let movesEnd):
+            // A break the owner took is never the plan's, even inside one.
+            let current = movesEnd ? nil
+                : plan.flatMap { currentBreak(of: session, plan: $0, runs: runs, at: now, timeZone: timeZone) }
             let key = "\(id)-\(current.map { String($0.blockID) } ?? String(until.timeIntervalSinceReferenceDate))"
             let peek = if let current, let plan, isLunch(current, in: plan) {
                 RaccoonPeek(poseID: RaccoonPresence.lunchPose, message: "Lunch time")
@@ -194,7 +216,8 @@ public enum RaccoonMoments {
             let remaining = session.remaining(at: now)
             if length > threshold, remaining <= threshold, remaining > warningTooLate {
                 let peek = RaccoonPeek(poseID: "peek", message: "\(minutes(remaining)) left",
-                                       actions: [.gotIt, .extend(minutes: extraMinutes)])
+                                       actions: [.gotIt, .extend(minutes: extraMinutes),
+                                                 .takeBreak(minutes: warningBreakMinutes)])
                 // Once per end: "+10 min" makes a new end, warned again
                 // before it. A pause also moves the planned end, but leaves
                 // the time left as it was, so it must not warn again;
@@ -216,6 +239,18 @@ public enum RaccoonMoments {
         case .paused:
             return []
         }
+    }
+
+    /// "Break's over" once, when a break the owner took ran out and the
+    /// session runs again. Ended early with Back to Task, it was the owner's
+    /// own choice, so the app reports no ended break.
+    private static func breakOver(_ ended: EndedBreak?, session: FocusSession, at now: Date) -> RaccoonMoment? {
+        guard let ended, ended.sessionID == session.id, session.phase == .running else { return nil }
+        let age = now.timeIntervalSince(ended.until)
+        guard age >= 0, age <= freshness else { return nil }
+        let peek = RaccoonPeek(poseID: "backpack", message: "Break's over. Back to it!", actions: [.gotIt])
+        return RaccoonMoment(id: .init(.breakOver, "\(session.id.uuidString)-\(ended.until.timeIntervalSinceReferenceDate)"),
+                             peek: peek, sessionID: session.id)
     }
 
     /// The next task block of an approved plan, starting within 10 minutes,

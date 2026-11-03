@@ -33,7 +33,14 @@ extension FocusCoordinator {
         await followPlanAfterAction()
     }
 
-    /// Ends a break early ("Back to task"). A plan break already started is
+    /// "Take a Break": a break the owner takes stops the countdown, so the
+    /// planned end moves later by its length (owner request, 2026-11-03).
+    public func takeBreak(duration: TimeInterval) async throws {
+        try await handle(.startBreak(duration: duration, movesEnd: true))
+    }
+
+    /// Ends a break early ("Back to task"). An owner break gives back the
+    /// part not taken. A plan break already started is
     /// not started again.
     public func endBreak() async throws {
         try await handle(.endBreak)

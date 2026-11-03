@@ -188,6 +188,8 @@ public enum RaccoonPeekAction: Hashable, Sendable {
     case extend(minutes: Int)
     /// Starts a new session on the same task once one has ended.
     case keepGoing(minutes: Int)
+    /// Takes a break the owner chose, which stops the countdown.
+    case takeBreak(minutes: Int)
     /// Ends the break.
     case backToTask
     /// Dismisses the peek after a session ended.
@@ -198,6 +200,7 @@ public enum RaccoonPeekAction: Hashable, Sendable {
         case .gotIt: "Got it"
         case .extend(let minutes): "+\(minutes) min"
         case .keepGoing(let minutes): "Keep going +\(minutes) min"
+        case .takeBreak(let minutes): "Break \(minutes) min"
         case .backToTask: "Back to task"
         case .done: "Done"
         }

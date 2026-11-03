@@ -19,7 +19,9 @@ public enum EndReason: String, Codable, Sendable {
 public enum SessionPhase: Equatable, Sendable {
     case running
     case paused(since: Date)
-    case onBreak(until: Date)
+    /// `movesEnd` marks a break the owner took ("Take a Break"), which
+    /// stops the countdown; a plan break keeps the planned end.
+    case onBreak(until: Date, movesEnd: Bool = false)
     case ended(at: Date, reason: EndReason)
 }
 
@@ -66,17 +68,21 @@ public struct FocusSession: Codable, Equatable, Sendable {
         case .running: plannedEnd
         // The countdown is stopped: nothing is due until the owner resumes.
         case .paused: nil
-        case .onBreak(let until): min(until, plannedEnd)
+        case .onBreak(let until, _): min(until, plannedEnd)
         case .ended: nil
         }
     }
 
     /// Focus time left at `now`. It stands still while paused, since
-    /// resuming moves `plannedEnd` later (owner decision, 2026-11-02).
+    /// resuming moves `plannedEnd` later (owner decision, 2026-11-02), and
+    /// through a break the owner took, which already moved it later
+    /// (2026-11-03). A plan break's time was set aside by the plan, so the
+    /// countdown runs on through it.
     public func remaining(at now: Date) -> TimeInterval {
         switch phase {
         case .running: plannedEnd.timeIntervalSince(now)
         case .paused(let since): plannedEnd.timeIntervalSince(since)
+        case .onBreak(let until, true): plannedEnd.timeIntervalSince(max(until, now))
         case .onBreak: plannedEnd.timeIntervalSince(now)
         case .ended: 0
         }
