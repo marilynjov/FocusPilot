@@ -768,9 +768,10 @@ private extension Array {
 struct RaccoonWindowView: View {
     let model: AppModel
     var margin = RaccoonCompanionController.margin
-    /// Where a peek's bubble goes: beside the raccoon in the Now card, so
-    /// the card hardly grows, above it in the window's corner.
-    var bubbleEdge = Edge.top
+    /// In the Now card the bubble is a small tag floating over the raccoon,
+    /// taking no room, without the buttons the card already has (owner
+    /// feedback, 2026-11-03). In the window's corner it sits above it.
+    var isInNowCard = false
 
     var body: some View {
         if model.raccoonIsInWindow,
@@ -780,19 +781,35 @@ struct RaccoonWindowView: View {
             let raccoon = RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
                 .allowsHitTesting(false)
-            let bubble = presence.message.map {
-                RaccoonWindowBubble(message: $0, actions: model.raccoonPeek?.actions ?? [], model: model)
-            }
             Group {
-                if bubbleEdge == .leading {
-                    HStack(alignment: .center, spacing: 8) { bubble; raccoon }
+                if isInNowCard {
+                    raccoon.overlay(alignment: .top) {
+                        if let message = presence.message {
+                            RaccoonWindowBubble(message: message, actions: cardlessActions, model: model, isCompact: true)
+                                .fixedSize()
+                                .alignmentGuide(.top) { $0[.bottom] - 18 }
+                        }
+                    }
                 } else {
-                    VStack(alignment: .trailing, spacing: 4) { bubble; raccoon }
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if let message = presence.message {
+                            RaccoonWindowBubble(message: message, actions: model.raccoonPeek?.actions ?? [], model: model)
+                        }
+                        raccoon
+                    }
                 }
             }
             .padding(margin)
             .transition(.opacity)
         }
+    }
+}
+
+extension RaccoonWindowView {
+    /// The peek's buttons the Now card doesn't already offer: only Keep
+    /// going, after a session ended. Got it and Done are a click on the tag.
+    var cardlessActions: [RaccoonPeekAction] {
+        (model.raccoonPeek?.actions ?? []).filter { if case .keepGoing = $0 { true } else { false } }
     }
 }
 
@@ -803,12 +820,15 @@ private struct RaccoonWindowBubble: View {
     let message: String
     let actions: [RaccoonPeekAction]
     let model: AppModel
+    /// A one-line tag: smaller text and padding, no fixed width.
+    var isCompact = false
     @Environment(\.palette) private var palette
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Text(message)
-                .font(.callout.weight(.medium))
+                .font(isCompact ? .caption.weight(.medium) : .callout.weight(.medium))
+                .lineLimit(isCompact ? 1 : nil)
                 .monospacedDigit()
                 .foregroundStyle(palette.color(.ink))
                 .fixedSize(horizontal: false, vertical: true)
@@ -827,11 +847,11 @@ private struct RaccoonWindowBubble: View {
                 .controlSize(.small)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(width: 220)
-        .background(palette.color(.surface), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.color(.line)))
+        .padding(.horizontal, isCompact ? 8 : 12)
+        .padding(.vertical, isCompact ? 4 : 8)
+        .frame(width: isCompact ? nil : 220)
+        .background(palette.color(isCompact ? .bg : .surface), in: RoundedRectangle(cornerRadius: isCompact ? 8 : 10))
+        .overlay(RoundedRectangle(cornerRadius: isCompact ? 8 : 10).stroke(palette.color(.line)))
     }
 }
 
