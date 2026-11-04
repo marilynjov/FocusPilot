@@ -25,7 +25,7 @@ extension AppModel {
         let now = Date.now
         guard let moment = RaccoonMoments.next(mode: displayPreferences.raccoonMode, session: session,
                                                extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
-                                               endedBreak: raccoonEndedBreak,
+                                               endedBreak: raccoonEndedBreak, quickTimer: snapshot.quickTimer,
                                                plan: raccoonPlan, runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
                                                shown: raccoonShownMoments, at: now, timeZone: .autoupdatingCurrent)
         else { return }
@@ -34,6 +34,8 @@ extension AppModel {
         raccoonShownMoments = raccoonShownMoments.filter { now.timeIntervalSince($0.value) < 86_400 }
         raccoonShownMoments[moment.id] = now
         raccoon.show(moment)
+        // The end warning's sound comes with its peek, once.
+        if moment.kind == .endWarning { playTimeUpSound(.soon) }
     }
 
     /// Notes a break the owner took that ran out, for "Break's over". One
@@ -76,12 +78,13 @@ extension AppModel {
         raccoonMomentsTask?.cancel()
         raccoonMomentsTask = Task { [weak self] in
             while let self, !Task.isCancelled {
-                let due = RaccoonMoments.nextDue(session: snapshot.session, plan: raccoonPlan, runs: raccoonRuns,
-                                                 at: .now, timeZone: .current)
+                let due = RaccoonMoments.nextDue(session: snapshot.session, quickTimer: snapshot.quickTimer,
+                                                 plan: raccoonPlan, runs: raccoonRuns, at: .now, timeZone: .current)
                 let wait = min(15, max(0.2, (due?.timeIntervalSinceNow ?? 15) + 0.2))
                 try? await Task.sleep(for: .seconds(wait), tolerance: .seconds(wait < 15 ? 0.2 : 5))
                 guard displayPreferences.raccoonMode != .off,
-                      snapshot.activeSession != nil || raccoonPlan?.state == .approved || raccoon.moment != nil
+                      snapshot.activeSession != nil || snapshot.quickTimer != nil || raccoonPlan?.state == .approved
+                        || raccoon.moment != nil
                 else { continue }
                 await refreshRaccoonMoments()
             }

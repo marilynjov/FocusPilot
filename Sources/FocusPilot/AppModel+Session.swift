@@ -25,6 +25,16 @@ extension AppModel {
         return session
     }
 
+    /// Plays the sound for time running out, once per event, whether or not
+    /// FocusPilot is in front, unless the owner turned it off (2026-11-03).
+    func playTimeUpSound(_ sound: TimeUpSound) {
+        guard menuBarPreferences.playsTimeUpSound else { return }
+        switch sound {
+        case .up: NSSound(named: "Glass")?.play()
+        case .soon: NSSound(named: "Tink")?.play()
+        }
+    }
+
     /// The task a new session would run on: the pinned Now task.
     var nowTask: TodayItem? {
         today.first { $0.status == .now }

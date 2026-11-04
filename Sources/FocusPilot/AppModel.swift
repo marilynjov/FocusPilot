@@ -266,6 +266,7 @@ final class AppModel {
         guard latest.revision >= snapshot.revision else { return }
         noticeWrapUp(from: snapshot.session, to: latest.session)
         noteRaccoonBreakEnd(from: snapshot.session, to: latest.session)
+        if let sound = TimeUpSound.due(from: snapshot, to: latest, at: .now) { playTimeUpSound(sound) }
         snapshot = latest
         if latest.activeSession == nil || latest.earlyEndAvailableAt != nil {
             isConfirmingEarlyEnd = false
