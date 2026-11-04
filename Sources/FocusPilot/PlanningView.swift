@@ -43,18 +43,21 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
+                .overlay(alignment: .bottomTrailing) { RaccoonWindowView(model: model) }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
-                    Button("New Task", systemImage: "plus") { isCapturing = true }
-                        .help("New task (⌘N)")
+                    Button("Add", systemImage: "plus") { isCapturing = true }
+                        .help(page == .dayPlan ? "Add a task or break to today’s plan (⌘N)" : "New task (⌘N)")
                 }
         }
         .frame(minWidth: 760, minHeight: 420)
         .focusedSceneValue(\.quickCapture, { isCapturing = true })
         .sheet(item: sheet) { sheet in
             switch sheet {
-            case .capture: QuickCaptureSheet(model: model)
+            // One way to add (owner request, 2026-11-02): a task for the
+            // list, or on Today's plan a task or break with its times.
+            case .capture: AddToPlanSheet(model: model, draft: captureDraft)
             case .startFocus: StartFocusSheet(model: model)
             case .wrapUp:
                 if let pending = model.wrapUp { WrapUpSheet(model: model, prompt: pending.prompt) }
@@ -71,8 +74,16 @@ struct PlanningView: View {
         // LSUIElement keeps the app out of the Dock, but while the planning
         // window is open the owner should be able to find it there and with
         // Command-Tab like any other window.
-        .onAppear { NSApplication.shared.setActivationPolicy(.regular) }
-        .onDisappear { NSApplication.shared.setActivationPolicy(.accessory) }
+        // The raccoon follows: here while the window is open, on screen
+        // while it is closed.
+        .onAppear {
+            NSApplication.shared.setActivationPolicy(.regular)
+            model.isPlanningWindowOpen = true
+        }
+        .onDisappear {
+            NSApplication.shared.setActivationPolicy(.accessory)
+            model.isPlanningWindowOpen = false
+        }
     }
 
     /// One sheet modifier, so a wrap-up and Start focus wanted at once show
@@ -92,6 +103,14 @@ struct PlanningView: View {
                 }
             }
         )
+    }
+
+    private var captureDraft: AddToPlanSheet.Draft {
+        let schedules = page == .dayPlan
+        if let plan = model.dayPlan, plan.date == model.todayDate {
+            return AddToPlanSheet.Draft(in: plan, schedules: schedules)
+        }
+        return AddToPlanSheet.Draft(on: model.todayDate, schedules: schedules)
     }
 
     private var title: String {

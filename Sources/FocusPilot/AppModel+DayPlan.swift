@@ -45,6 +45,17 @@ extension AppModel {
         }
     }
 
+    /// Captures a new task and places its block in one write (#29), then
+    /// reloads the task list so the new task shows there too.
+    func addBlock(_ block: DayBlock, forNew newTask: NewTask, on date: LocalDate,
+                  confirmed: Bool = false) async -> BlockEditOutcome {
+        let outcome = await blockEdit("Could not add the task to the plan", on: date) { coordinator, date in
+            try await coordinator.addBlock(block, forNew: newTask, to: date, confirmed: confirmed)
+        }
+        if case .saved = outcome { await refresh() }
+        return outcome
+    }
+
     /// A move, a resize, or a change of kind or task.
     func updateBlock(_ block: DayBlock, on date: LocalDate, confirmed: Bool = false) async -> BlockEditOutcome {
         await blockEdit("Could not change the block", on: date) { coordinator, date in
@@ -70,18 +81,32 @@ extension AppModel {
         }
     }
 
-    /// Saves the preferences, or explains why they were not saved.
+    /// Saves the preferences, or explains why they were not saved. New
+    /// working hours also go to today's plan when its blocks fit them.
     func saveDayPreferences(_ preferences: DayPreferences) async {
         guard let coordinator else { return }
         do {
-            try await coordinator.saveDayPreferences(preferences)
+            let saved = try await coordinator.saveDayPreferences(preferences, today: todayDate)
             dayPreferences = preferences
             dayPreferencesError = nil
+            await showSaved(saved)
         } catch DayPlanError.invalid(let problem) {
             dayPreferencesError = "Not saved: \(DayPlanText.message(problem))"
         } catch {
             dayPreferencesError = "Could not save your day settings: \(error.localizedDescription)"
         }
+    }
+
+    /// Tries the saved working hours on today's plan again, after the owner
+    /// moved the block that was outside them.
+    func applyWorkingHoursToToday() async {
+        await saveDayPreferences(dayPreferences)
+    }
+
+    private func showSaved(_ saved: DayPreferencesSave) async {
+        if case .todayKept(let hours) = saved { todayKeptHours = hours } else { todayKeptHours = nil }
+        // Only refresh a plan already shown: loading would create today's.
+        if dayPlan?.date == todayDate { await loadDayPlan() }
     }
 
     private func blockEdit(_ failure: String, on date: LocalDate,

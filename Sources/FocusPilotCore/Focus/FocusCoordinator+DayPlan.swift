@@ -8,8 +8,9 @@ extension FocusCoordinator {
         try await repository.dayPreferences()
     }
 
-    public func saveDayPreferences(_ preferences: DayPreferences) async throws {
-        try await repository.saveDayPreferences(preferences)
+    @discardableResult
+    public func saveDayPreferences(_ preferences: DayPreferences, today: LocalDate? = nil) async throws -> DayPreferencesSave {
+        try await repository.saveDayPreferences(preferences, today: today)
     }
 
     public func dayPlan(for date: LocalDate) async throws -> DayPlan {
@@ -18,6 +19,15 @@ extension FocusCoordinator {
 
     public func addBlock(_ block: DayBlock, to date: LocalDate, confirmed: Bool = false) async throws -> DayPlanEdit {
         let edit = try await repository.addBlock(block, to: date, confirmed: confirmed)
+        await followPlanAfterAction()
+        return edit
+    }
+
+    /// Captures a new task and places its block in one step (#29). Following
+    /// the plan afterwards broadcasts, so subscribers hear of the new task.
+    public func addBlock(_ block: DayBlock, forNew newTask: NewTask, to date: LocalDate,
+                         confirmed: Bool = false) async throws -> DayPlanEdit {
+        let edit = try await repository.addBlock(block, forNew: newTask, to: date, confirmed: confirmed)
         await followPlanAfterAction()
         return edit
     }
