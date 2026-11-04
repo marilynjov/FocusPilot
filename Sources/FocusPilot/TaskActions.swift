@@ -32,7 +32,7 @@ struct TaskCommands: Commands {
         CommandMenu("Task") {
             sessionItems
             Divider()
-            Button("Quick Capture") { quickCapture?() }
+            Button("New Task…") { quickCapture?() }
                 .keyboardShortcut("n")
                 .disabled(quickCapture == nil)
             Divider()

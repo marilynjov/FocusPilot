@@ -151,7 +151,7 @@ extension AppModel {
 
     /// The tired raccoon after more time is asked for.
     private func showRaccoonTired(minutes: Int) {
-        raccoon.peek(RaccoonMoments.moreTime(minutes: minutes), for: .seconds(RaccoonMoments.moreTimeDuration))
+        raccoon.show(RaccoonMoments.moreTime(minutes: minutes, at: .now))
     }
 
     /// "Keep going" once a session has ended: the same task and mode again.
