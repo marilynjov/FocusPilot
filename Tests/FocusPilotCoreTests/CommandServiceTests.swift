@@ -94,3 +94,52 @@ struct CommandServiceTests {
         #expect(await service.handle(.add(herdrAdd("   "))) == .refused("Nothing to add: the task needs a title."))
     }
 }
+
+/// Agent reports over the socket: each agent, all agents together and new
+/// agents each have a budget per minute (decision 0005).
+@Suite("Command service: agent reports")
+struct AgentReportServiceTests {
+    private let repository: TaskRepository
+    private let service: CommandService
+
+    init() throws {
+        repository = try TaskRepository(location: StorageLocation(directory: makeTemporaryDirectory()),
+                                        now: { wednesdayMorningInBogota })
+        service = CommandService(repository: repository, now: { wednesdayMorningInBogota })
+    }
+
+    private func report(_ session: String) -> CommandRequest {
+        .agentReport(AgentReport(source: .command, status: .working, label: "bot", key: session))
+    }
+
+    private func isRecorded(_ response: CommandResponse) -> Bool {
+        if case .agentRecorded = response { true } else { false }
+    }
+
+    @Test func monitoringOffIsRefusedWithItsMessage() async {
+        #expect(await service.handle(report("a")) == .refused(CommandService.monitoringOffMessage))
+    }
+
+    @Test func oneAgentGetsTwentyAMinute() async throws {
+        try await repository.setAgentMonitoring(true)
+        for _ in 0..<AddRateLimit.limit { #expect(isRecorded(await service.handle(report("a")))) }
+        #expect(await service.handle(report("a")) == .refused(CommandService.reportRateLimitMessage))
+        #expect(isRecorded(await service.handle(report("b"))))
+    }
+
+    @Test func allAgentsTogetherGetSixtyAMinute() async throws {
+        try await repository.setAgentMonitoring(true)
+        for agent in 0..<3 {
+            for _ in 0..<AddRateLimit.limit { #expect(isRecorded(await service.handle(report("agent\(agent)")))) }
+        }
+        #expect(await service.handle(report("agent4")) == .refused(CommandService.allReportsLimitMessage))
+    }
+
+    @Test func tooManyNewAgentsAreRefused() async throws {
+        try await repository.setAgentMonitoring(true)
+        for agent in 0..<ReportedAgentStore.newAgentsPerMinute {
+            #expect(isRecorded(await service.handle(report("new\(agent)"))))
+        }
+        #expect(await service.handle(report("flood")) == .refused(CommandService.newAgentsLimitMessage))
+    }
+}

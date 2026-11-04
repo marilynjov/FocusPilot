@@ -13,7 +13,8 @@ struct TaskRepositoryTests {
 
         #expect(owner.tables == ["task", "project", "herdrLink", "herdrSeenWorkspace", "herdrSeenServer", "focusSession", "policyPublication",
                                 "blockRuleSet", "allowedActivity", "wrapUp", "herdrAgentLink", "herdrReviewItem", "timedException",
-                                "observeMode", "pilotEvent", "rawActivity", "dayPreferences", "dayPlan", "dayBlock", "quickTimer", "planRun"])
+                                "observeMode", "pilotEvent", "rawActivity", "dayPreferences", "dayPlan", "dayBlock", "quickTimer", "planRun",
+                                "agentMonitoring", "reportedAgent"])
         #expect(cache.tables == ["cacheEntry"])
     }
 

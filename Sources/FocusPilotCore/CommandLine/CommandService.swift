@@ -9,6 +9,8 @@ public enum CommandRequest: Codable, Equatable, Sendable {
     case exception(ExceptionCommand)
     /// The owner left a strict-session exception wait for this scope.
     case cancelException(ExceptionScope)
+    /// An agent's status, from `focuspilot agent report` or `run` (decision 0005).
+    case agentReport(AgentReport)
 }
 
 /// A timed exception as the blocked page asks for it.
@@ -31,6 +33,7 @@ public enum CommandResponse: Codable, Equatable, Sendable {
     case tasks(HerdrTaskScope)
     case exception(ExceptionOutcome)
     case exceptionCancelled
+    case agentRecorded(AgentReportReceipt)
     /// Not done, with a message for the caller, e.g. the rate limit.
     case refused(String)
     case failed(String)
@@ -40,11 +43,16 @@ public enum CommandResponse: Codable, Equatable, Sendable {
 /// loop cannot flood the owner's list. Only allowed adds count.
 public struct AddRateLimit: Sendable {
     public static let limit = 20
+
+    /// The most allowed per key in any `window`.
+    private let limit: Int
     public static let window: TimeInterval = 60
 
     private var recent: [String: [Date]] = [:]
 
-    public init() {}
+    public init(limit: Int = Self.limit) {
+        self.limit = limit
+    }
 
     /// Records the add and returns true if it is within the limit. Panes
     /// with no add in the last window are forgotten, so closed panes do not
@@ -55,7 +63,7 @@ public struct AddRateLimit: Sendable {
             return kept.isEmpty ? nil : kept
         }
         let kept = recent[pane] ?? []
-        guard kept.count < Self.limit else { return false }
+        guard kept.count < limit else { return false }
         recent[pane] = kept + [now]
         return true
     }
@@ -88,6 +96,16 @@ public actor CommandService {
     static let rateLimitMessage =
         "Refused: this pane has added \(AddRateLimit.limit) tasks in the last minute. Wait a minute and try again."
     static let exceptionCallerMessage = "Only the FocusPilot blocked page in Chrome can ask for a site exception."
+    public static let monitoringOffMessage =
+        "Refused: agent monitoring is off in FocusPilot. Turn it on in FocusPilot › Settings › General › Agent monitoring."
+    static let reportRateLimitMessage =
+        "Refused: this agent has reported \(AddRateLimit.limit) times in the last minute. Wait a minute and try again."
+    /// Reports from all agents together in any minute.
+    static let allReportsLimit = 60
+    static let allReportsLimitMessage =
+        "Refused: agents have reported \(allReportsLimit) times in the last minute. Wait a minute and try again."
+    static let newAgentsLimitMessage =
+        "Refused: \(ReportedAgentStore.newAgentsPerMinute) new agents have reported in the last minute. Wait a minute and try again."
 
     private let repository: TaskRepository
     private let exceptions: (any ExceptionGate)?
@@ -95,6 +113,10 @@ public actor CommandService {
     private let exceptionCaller: ExceptionCallerCheck?
     private let now: @Sendable () -> Date
     private var rateLimit = AddRateLimit()
+    /// Reports count per agent, apart from adds, and all together, so a
+    /// process making up new agents cannot flood the owner either.
+    private var reportLimit = AddRateLimit()
+    private var allReports = AddRateLimit(limit: CommandService.allReportsLimit)
 
     public init(repository: TaskRepository, exceptions: (any ExceptionGate)? = nil, exceptionCaller: ExceptionCallerCheck? = nil,
                 now: @escaping @Sendable () -> Date = Date.init) {
@@ -130,6 +152,23 @@ public actor CommandService {
                 return .added(try await repository.addFromHerdr(add))
             } catch {
                 return .failed("FocusPilot could not save the task: \(error.localizedDescription)")
+            }
+        case .agentReport(let raw):
+            // Cleaned again: any local process can write to the socket.
+            guard let report = try? raw.sanitized().report else { return .refused("Refused: the report needs a --name.") }
+            guard allReports.allow("all", at: now()) else { return .refused(Self.allReportsLimitMessage) }
+            guard reportLimit.allow("\(report.source.rawValue) \(report.identity)", at: now()) else {
+                return .refused(Self.reportRateLimitMessage)
+            }
+            do {
+                guard let receipt = try await repository.recordAgentReport(report) else {
+                    return .refused(Self.monitoringOffMessage)
+                }
+                return .agentRecorded(receipt)
+            } catch ReportedAgentStore.Refusal.tooManyNewAgents {
+                return .refused(Self.newAgentsLimitMessage)
+            } catch {
+                return .failed("FocusPilot could not record the report: \(error.localizedDescription)")
             }
         case .tasks(let caller):
             do {

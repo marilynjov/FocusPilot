@@ -28,7 +28,7 @@ extension AppModel {
                                                extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
                                                endedBreak: raccoonEndedBreak, quickTimer: snapshot.quickTimer,
                                                plan: raccoonPlan, runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
-                                               shown: raccoonShownMoments, at: now, timeZone: .autoupdatingCurrent)
+                                               agentsNeedingYou: agentsNeedingYou, shown: raccoonShownMoments, at: now, timeZone: .autoupdatingCurrent)
         else { return }
         if let current = raccoon.moment, current.kind >= moment.kind { return }
         // A day on, every moment shown is stale anyway, so the memory stays small.
@@ -114,6 +114,9 @@ extension AppModel {
         case .backToTask:
             raccoon.endPeek(reevaluating: false)
             Task { await endBreak() }
+        case .goToAgent(let agentID):
+            raccoon.endPeek()
+            Task { await goToAgent(agentID, from: .raccoon) }
         }
     }
 }

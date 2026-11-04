@@ -118,7 +118,10 @@ enum HerdrAgentStore {
             return ReviewItem(id: row["id"], taskID: row["taskId"], taskTitle: row["taskTitle"], linkID: row["linkId"],
                               kind: AgentTransition.Review(rawValue: row["kind"])!, occurredAt: row["occurredAt"],
                               agentLabel: row["agentLabel"], workspaceLabel: row["workspaceLabel"], summary: row["summary"],
-                              output: text.map { AgentOutputPreview(storedText: $0, totalLineCount: row["outputLineCount"]) })
+                              output: text.map { AgentOutputPreview(storedText: $0, totalLineCount: row["outputLineCount"]) },
+                              reportedAgentID: row["reportedAgentId"],
+                              source: (row["source"] as String?).flatMap(AgentSource.init(rawValue:)),
+                              agentState: (row["agentState"] as String?).flatMap(ReportedAgentState.init(rawValue:)))
         }
     }
 
@@ -179,6 +182,9 @@ struct ReviewItemRow: Codable, FetchableRecord, MutablePersistableRecord {
     var outputText: String?
     var outputLineCount: Int?
     var reviewedAt: Date?
+    var reportedAgentId: Int64? = nil
+    var source: String? = nil
+    var agentState: String? = nil
 
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID

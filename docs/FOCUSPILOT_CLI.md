@@ -1,6 +1,6 @@
 # The focuspilot command
 
-`focuspilot` lets the owner, or an agent running in a Herdr pane, add tasks to FocusPilot and read them. It ships inside the app at `FocusPilot.app/Contents/Helpers/focuspilot`. To use it from a shell, link it onto your PATH once:
+`focuspilot` lets the owner, or an agent running in a Herdr pane, add tasks to FocusPilot and read them, and lets any agent report its status. It ships inside the app at `FocusPilot.app/Contents/Helpers/focuspilot`. To use it from a shell, link it onto your PATH once:
 
 ```sh
 ln -s ~/Applications/FocusPilot.app/Contents/Helpers/focuspilot ~/.local/bin/focuspilot
@@ -26,6 +26,26 @@ Paste this section into an agent's instructions.
 | `--json` | Options go before the task text; `--` ends them, so `focuspilot add -- --json flag docs` adds the text as typed (capture trims dashes at the very start or end of a title). Machine-readable output for either command. `add` reports `status` (`added`, `alreadyAdded` or `queued`), `title`, `project`, `deadline` and `hints`; `tasks` reports `running`, `now`, `project` and `tasks`. |
 
 Exit status: `0` done (or queued), `1` refused or failed, `2` usage error, `3` FocusPilot is not running (`tasks` only).
+
+## Agent status: `agent report` and `run`
+
+These commands let any command-line agent or script tell FocusPilot what it is doing (decision 0005). FocusPilot shows the agent in the task's Agent panel and puts finished results in the Review queue. It never answers, prompts or stops the agent. **Agent monitoring** must be on in **Settings › General**. While it is off, every report is refused with "agent monitoring is off" on stderr and exit status 1.
+
+| Command | Result |
+| --- | --- |
+| `focuspilot agent report <working\|needs-input\|done\|failed> --name <label> [--folder <path>] [--summary <text>] [--task <id>] [--terminal <app>] [--tty <device>] [--session <id>]` | Records the agent's state. The folder defaults to the current one. The terminal defaults to `TERM_PROGRAM` and the controlling terminal. `--session` identifies the agent across reports; without it, the label and folder do. `needs-input` makes the raccoon peek at once. |
+| `focuspilot agent report --from-claude-hook <event> [--name <label>]` | For Claude Code hooks. Reads the hook's JSON on stdin and never prints to stdout or exits 2. See [Claude Code hooks](agents/claude-code-hooks.md). |
+| `focuspilot run [--task <id>] [--name <label>] -- <command> [args...]` | Reports Working, runs the command in this terminal, then reports Ready or Failed by its exit status, which it returns. If a signal stopped the command, `run` stops itself with the same signal. If the first report is refused, the command is not run. `run` sends no reports while the command runs, so a command that takes over 30 minutes shows Unknown until it ends. |
+
+Everything an agent sends is treated as untrusted:
+
+- The label is capped at 80 characters and the summary at 2,000.
+- Control and invisible formatting characters are removed.
+- A folder must be an absolute path, and a terminal device must look like `/dev/ttys003`. Values that don't fit are dropped with a note.
+- Nothing is executed or shown as markup.
+- Each agent can report at most 20 times a minute, all agents together 60 times, and at most 10 new agents can start reporting in a minute.
+- Each report carries the time it was sent; for a Claude Code hook, that is when the hook started. A report older than the agent's last one does not change its state, and a time more than 5 minutes back counts as 5 minutes back.
+- Reports are not queued while FocusPilot is closed.
 
 ## Where tasks go
 

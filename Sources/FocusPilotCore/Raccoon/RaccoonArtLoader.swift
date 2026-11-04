@@ -194,6 +194,18 @@ public enum RaccoonPeekAction: Hashable, Sendable {
     case backToTask
     /// Dismisses the peek after a session ended.
     case done
+    /// Brings the reported agent's terminal forward (decision 0005), as
+    /// Go to agent in the Agent panel does.
+    case goToAgent(Int64)
+
+    /// What the Now card's session controls, or a click on its tag,
+    /// already do; the card leaves these out of the raccoon's tag.
+    public var isSessionControl: Bool {
+        switch self {
+        case .gotIt, .extend, .takeBreak, .backToTask, .done: true
+        case .keepGoing, .goToAgent: false
+        }
+    }
 
     public var title: String {
         switch self {
@@ -203,6 +215,7 @@ public enum RaccoonPeekAction: Hashable, Sendable {
         case .takeBreak(let minutes): "Break \(minutes) min"
         case .backToTask: "Back to task"
         case .done: "Done"
+        case .goToAgent: "Go to agent"
         }
     }
 }

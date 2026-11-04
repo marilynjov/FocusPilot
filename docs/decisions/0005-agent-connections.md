@@ -53,7 +53,9 @@ Notifications: FocusPilot's notifications are currently delivered quietly (provi
 
 ## Order of work (replaces D17's scope)
 
-1. Generic command (#2), Claude Code hooks setup (#3) with a copy-paste snippet, the agent model, the Agent panel and Review queue for non-Herdr agents, and click-to-workspace for Warp and Terminal/iTerm2 as far as validated. Agent monitoring setting (D8) covers all sources.
+1. Generic command (#2), Claude Code hooks setup (#3) with a copy-paste snippet, the agent model, the Agent panel and Review queue for non-Herdr agents, and click-to-workspace for Warp and Terminal/iTerm2 as far as validated. Agent monitoring setting (D8) covers all sources. **Built 2026-11-03 (D17, #24)**, awaiting the owner's try-out. The setup is in [docs/agents/claude-code-hooks.md](../agents/claude-code-hooks.md) and the checks in [VALIDATION_PLAN.md](../VALIDATION_PLAN.md). As built:
+   - The Agent monitoring setting covers reported agents only. Herdr does not read it until D8.
+   - Warp is brought forward. A new tab in the agent's folder is a separate button, since Warp documents no way to reach an existing tab.
 2. MCP server (#4).
 3. Cursor and Codex adapters (#5, #6) after validation.
 4. GitHub cloud agents (#7) and the process watcher (#8) if the owner wants them.

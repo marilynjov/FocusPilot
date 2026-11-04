@@ -2,9 +2,10 @@ import FocusPilotCore
 import SwiftUI
 
 /// Design 16: agent results and approval requests waiting for the owner.
-/// Items arrive while FocusPilot polls Herdr, without changing Now or the
-/// task. Output is plain text, never executed or rendered as markup, and
-/// FocusPilot never answers an approval.
+/// Items arrive while FocusPilot polls Herdr, or when an agent reports
+/// (decision 0005), without changing Now or the task. Output is plain text,
+/// never executed or rendered as markup, and FocusPilot never answers an
+/// approval. A reported result waits while a plan block runs (D8).
 struct ReviewQueueView: View {
     let model: AppModel
     @State private var selection: ReviewItem.ID?
@@ -12,7 +13,8 @@ struct ReviewQueueView: View {
     var body: some View {
         if model.reviewItems.isEmpty {
             ContentUnavailableView("Nothing to review", systemImage: "tray",
-                                   description: Text("Agent results appear here when they finish. Nothing opens on its own."))
+                                   description: Text(model.heldReviewCount > 0 ? heldText
+                                                     : "Agent results appear here when they finish. Nothing opens on its own."))
         } else {
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
@@ -21,7 +23,8 @@ struct ReviewQueueView: View {
                     }
                     .listStyle(.inset)
                     Divider()
-                    Text("Previews are plain text from the agent’s screen, never executed. Approval requests are shown; FocusPilot never answers them.")
+                    Text("Previews are plain text from the agent, never executed. Approval requests are shown; FocusPilot never answers them."
+                         + (model.heldReviewCount > 0 ? " " + heldText : ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -42,15 +45,24 @@ struct ReviewQueueView: View {
             .onAppear { selection = selection ?? model.reviewItems.first?.id }
         }
     }
+
+    private var heldText: String {
+        let count = model.heldReviewCount
+        return (count == 1 ? "1 more result waits" : "\(count) more results wait") + " for your next break."
+    }
 }
 
 extension ReviewItem {
-    var stateTitle: String { kind == .approval ? "Needs your approval" : "Ready" }
+    var stateTitle: String {
+        kind == .approval ? "Needs your approval" : agentState == .failed ? "Failed" : "Ready"
+    }
 
     var timeTitle: String {
         let time = occurredAt.formatted(date: .omitted, time: .shortened)
-        return kind == .approval ? "Waiting since \(time)" : "Finished \(time)"
+        return kind == .approval ? "Waiting since \(time)" : agentState == .failed ? "Failed \(time)" : "Finished \(time)"
     }
+
+    var stateRole: PaletteRole { kind == .approval || agentState == .failed ? .blocked : .ready }
 
     var place: String { [agentLabel, workspaceLabel].compactMap { $0 }.joined(separator: " · ") }
 
@@ -83,7 +95,7 @@ struct AgentResultRow: View {
                 }
             }
             Spacer(minLength: 8)
-            StatusDot(title: item.stateTitle, role: item.kind == .approval ? .blocked : .ready, filled: true)
+            StatusDot(title: item.stateTitle, role: item.stateRole, filled: true)
         }
         .padding(.vertical, 4)
         // One item for VoiceOver, without the arrow and middle dots.
@@ -102,10 +114,15 @@ struct AgentResultDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                StatusDot(title: item.stateTitle, role: item.kind == .approval ? .blocked : .ready, filled: true)
+                StatusDot(title: item.stateTitle, role: item.stateRole, filled: true)
                 Text(verbatim: "\(item.place) · \(item.timeTitle.lowercased())")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                if let source = item.source {
+                    Text(verbatim: "Result \(source.provenance)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             LabeledContent("Task") {
                 Text(verbatim: item.taskTitle)
@@ -145,6 +162,10 @@ struct AgentResultDetail: View {
                 if let linkID = item.linkID {
                     Button("Open agent") { Task { await model.openAgent(linkID) } }
                         .help("Shows this agent's pane in Herdr. Herdr then marks its result as seen.")
+                }
+                if let agentID = item.reportedAgentID {
+                    Button("Go to agent") { Task { await model.goToAgent(agentID, from: .panel) } }
+                        .help("Brings the agent’s terminal forward.")
                 }
                 Spacer()
                 Button("Mark reviewed") { Task { await model.markReviewed(item.id) } }

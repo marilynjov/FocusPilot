@@ -88,8 +88,15 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     public var workspaceLabel: String?
     /// The agent's terminal title when it happened.
     public var summary: String?
-    /// The agent's visible screen, read once when the item was queued.
+    /// The agent's visible screen, read once when the item was queued; for
+    /// a reported agent, the summary it sent.
     public var output: AgentOutputPreview?
+    /// Set for a reported agent's result (decision 0005), nil for Herdr's.
+    /// The agent ID is nil once the agent was forgotten.
+    public var reportedAgentID: Int64? = nil
+    public var source: AgentSource? = nil
+    /// A reported agent's result: Ready or Failed.
+    public var agentState: ReportedAgentState? = nil
 }
 
 /// An item just queued, whose output is still to be read from `paneID`.

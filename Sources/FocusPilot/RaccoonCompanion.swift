@@ -814,12 +814,13 @@ struct RaccoonWindowView: View {
 
 extension RaccoonWindowView {
     /// The peek's buttons the Now card doesn't already offer. With the
-    /// session controls in the card, only Keep going, after a session ended
-    /// (Got it and Done are a click on the tag); without them, all.
+    /// session controls in the card, those are left out (Got it and Done
+    /// are a click on the tag); Keep going and Go to agent stay. Without
+    /// them, all.
     var cardlessActions: [RaccoonPeekAction] {
         let actions = model.raccoonPeek?.actions ?? []
         guard cardShowsSessionControls else { return actions }
-        return actions.filter { if case .keepGoing = $0 { true } else { false } }
+        return actions.filter { !$0.isSessionControl }
     }
 }
 
