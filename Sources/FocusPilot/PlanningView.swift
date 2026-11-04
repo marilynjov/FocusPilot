@@ -148,16 +148,18 @@ struct PlanningView: View {
         } else if page == .settings {
             SettingsPage(model: model)
         } else {
+            // The current task first; the Quick timer stays at the bottom
+            // (owner request, 2026-11-03).
             VStack(spacing: 0) {
+                todayTasks
                 QuickTimerCard(model: model)
                     .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                todayTasks
+                    .padding(.vertical, 12)
             }
         }
     }
 
-    /// Today's tasks under the Quick timer card (D2).
+    /// Today's tasks, above the Quick timer card (D2).
     @ViewBuilder private var todayTasks: some View {
         if model.today.isEmpty {
             ContentUnavailableView(
