@@ -768,18 +768,70 @@ private extension Array {
 struct RaccoonWindowView: View {
     let model: AppModel
     var margin = RaccoonCompanionController.margin
+    /// Where a peek's bubble goes: beside the raccoon in the Now card, so
+    /// the card hardly grows, above it in the window's corner.
+    var bubbleEdge = Edge.top
 
     var body: some View {
         if model.raccoonIsInWindow,
            let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
                                                    peek: model.raccoonPeek),
            let art = model.raccoon.loadArt() {
-            RaccoonStage(art: art, poseID: presence.poseID)
+            let raccoon = RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
-                .padding(margin)
                 .allowsHitTesting(false)
-                .transition(.opacity)
+            let bubble = presence.message.map {
+                RaccoonWindowBubble(message: $0, actions: model.raccoonPeek?.actions ?? [], model: model)
+            }
+            Group {
+                if bubbleEdge == .leading {
+                    HStack(alignment: .center, spacing: 8) { bubble; raccoon }
+                } else {
+                    VStack(alignment: .trailing, spacing: 4) { bubble; raccoon }
+                }
+            }
+            .padding(margin)
+            .transition(.opacity)
         }
+    }
+}
+
+/// A peek's speech bubble inside the planning window (owner request,
+/// 2026-11-03): the message and the peek's buttons, which run the same
+/// commands as the floating bubble's. Clicking the message dismisses it.
+private struct RaccoonWindowBubble: View {
+    let message: String
+    let actions: [RaccoonPeekAction]
+    let model: AppModel
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            Text(message)
+                .font(.callout.weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(palette.color(.ink))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { model.raccoon.endPeek() }
+                .help(actions.isEmpty ? "Click to dismiss" : "Click the message to dismiss")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Dismisses the raccoon’s reminder")
+            if !actions.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(actions, id: \.self) { action in
+                        Button(action.title) { model.performRaccoonAction(action) }
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(width: 220)
+        .background(palette.color(.surface), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.color(.line)))
     }
 }
 

@@ -34,8 +34,8 @@ extension AppModel {
         raccoonShownMoments = raccoonShownMoments.filter { now.timeIntervalSince($0.value) < 86_400 }
         raccoonShownMoments[moment.id] = now
         raccoon.show(moment)
-        // The end warning's sound comes with its peek, once.
-        if moment.kind == .endWarning { playTimeUpSound(.soon) }
+        // The end and break-ending warnings' sound comes with their peek, once.
+        if moment.kind == .endWarning || moment.kind == .breakEnding { playTimeUpSound(.soon) }
     }
 
     /// Notes a break the owner took that ran out, for "Break's over". One

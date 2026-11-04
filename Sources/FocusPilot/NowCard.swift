@@ -18,7 +18,7 @@ struct NowCard: View {
         HStack(alignment: .bottom, spacing: 0) {
             content
             if showsRaccoon, let model {
-                RaccoonWindowView(model: model, margin: 0)
+                RaccoonWindowView(model: model, margin: 0, bubbleEdge: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
