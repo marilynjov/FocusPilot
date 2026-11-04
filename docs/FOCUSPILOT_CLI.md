@@ -44,7 +44,7 @@ Everything an agent sends is treated as untrusted:
 - A folder must be an absolute path, and a terminal device must look like `/dev/ttys003`. Values that don't fit are dropped with a note.
 - Nothing is executed or shown as markup.
 - Each agent can report at most 20 times a minute, all agents together 60 times, and at most 10 new agents can start reporting in a minute.
-- Each report carries the time the command started; one older than the agent's last report does not change its state.
+- Each report carries the time it was sent; for a Claude Code hook, that is when the hook started. A report older than the agent's last one does not change its state, and a time more than 5 minutes back counts as 5 minutes back.
 - Reports are not queued while FocusPilot is closed.
 
 ## Where tasks go

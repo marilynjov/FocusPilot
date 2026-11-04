@@ -597,3 +597,14 @@ struct RaccoonNeedsYouTests {
         #expect(next(session: nil, needs: [need(ago: 11 * 60)]) == nil)
     }
 }
+
+extension RaccoonNeedsYouTests {
+    /// The Now card's tag leaves out only what its session controls do, so
+    /// Go to agent and Keep going stay.
+    @Test func goToAgentIsNotASessionControl() {
+        let controls: [RaccoonPeekAction] = [.gotIt, .extend(minutes: 10), .takeBreak(minutes: 5), .backToTask, .done]
+        #expect(controls.allSatisfy { $0.isSessionControl })
+        #expect(!RaccoonPeekAction.goToAgent(3).isSessionControl)
+        #expect(!RaccoonPeekAction.keepGoing(minutes: 10).isSessionControl)
+    }
+}

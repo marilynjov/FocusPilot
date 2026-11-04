@@ -32,8 +32,13 @@ final class AppModel {
     /// Agents that reported they need the owner, for the raccoon; kept
     /// until they report something else or are gone.
     @ObservationIgnored var agentsNeedingYou: [RaccoonMoments.AgentNeed] = []
+    /// Whether the needs-you notifications left from the last launch were
+    /// checked against the agents' states, which the first refresh does.
+    @ObservationIgnored var checkedLaunchNotifications = false
     /// When the last break of a session ended: held results from before it
-    /// were shown during the break and stay shown (`ReviewHold`).
+    /// were shown during the break and stay shown (`ReviewHold`). In memory
+    /// only: after a relaunch the session start counts again, so results
+    /// from before that break wait for the next one.
     var reviewReleasedAt: Date?
     /// Turns a needs-you notification click into Go to agent.
     @ObservationIgnored let notificationClicks = NotificationClicks()

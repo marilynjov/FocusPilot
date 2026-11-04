@@ -209,6 +209,16 @@ struct ReportedAgentStorageTests {
         #expect(try await repository.reportedAgents().first?.lastReportAt == wednesdayMorningInBogota)
     }
 
+    @Test func aTimeLongAgoCountsAsFiveMinutesAgo() async throws {
+        try await repository.setAgentMonitoring(true)
+        _ = try await report(.working, at: wednesdayMorningInBogota.addingTimeInterval(-86_400))
+        #expect(try await repository.reportedAgents().first?.lastReportAt
+            == wednesdayMorningInBogota.addingTimeInterval(-ReportedAgentStore.oldestReport))
+        // So a report from the last minutes still counts as newer.
+        _ = try await report(.done, at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        #expect(try await repository.reportedAgents().first?.reportedState == .ready)
+    }
+
     @Test func aFallbackLabelKeepsTheTitleGivenBefore() async throws {
         try await repository.setAgentMonitoring(true)
         _ = try await report(.working, label: "Ablation fixes")

@@ -38,6 +38,12 @@ extension AppModel {
     func pruneAgentsNeedingYou() {
         let now = Date.now
         let waiting = Set(reportedAgents.filter { $0.state(at: now) == .needsYou }.map(\.id))
+        // Notifications outlive the app: after a relaunch, take back those
+        // of agents that no longer need the owner.
+        if !checkedLaunchNotifications {
+            checkedLaunchNotifications = true
+            UserNotices.removeNeedsYou(agentIDs: reportedAgents.map(\.id).filter { !waiting.contains($0) })
+        }
         let gone = agentsNeedingYou.filter { !waiting.contains($0.agentID) }
         guard !gone.isEmpty else { return }
         agentsNeedingYou.removeAll { !waiting.contains($0.agentID) }
@@ -67,9 +73,12 @@ extension AppModel {
     /// redraw.
     func agentReported(_ receipt: AgentReportReceipt) async {
         await refresh()
-        agentsNeedingYou.removeAll { $0.agentID == receipt.agentID }
-        // A notification about an earlier request is out of date now.
-        UserNotices.removeNeedsYou(agentIDs: [receipt.agentID])
+        // A new request, or a newer report of something else, makes an
+        // earlier request out of date; a late report about the past doesn't.
+        if receipt.needsYouNow || receipt.state != .needsYou {
+            agentsNeedingYou.removeAll { $0.agentID == receipt.agentID }
+            UserNotices.removeNeedsYou(agentIDs: [receipt.agentID])
+        }
         if receipt.needsYouNow {
             agentsNeedingYou.append(RaccoonMoments.AgentNeed(agentID: receipt.agentID, label: receipt.label, since: .now))
             playTimeUpSound(.soon)

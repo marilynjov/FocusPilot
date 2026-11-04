@@ -198,6 +198,15 @@ public enum RaccoonPeekAction: Hashable, Sendable {
     /// Go to agent in the Agent panel does.
     case goToAgent(Int64)
 
+    /// What the Now card's session controls, or a click on its tag,
+    /// already do; the card leaves these out of the raccoon's tag.
+    public var isSessionControl: Bool {
+        switch self {
+        case .gotIt, .extend, .takeBreak, .backToTask, .done: true
+        case .keepGoing, .goToAgent: false
+        }
+    }
+
     public var title: String {
         switch self {
         case .gotIt: "Got it"

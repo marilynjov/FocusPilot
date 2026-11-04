@@ -29,6 +29,9 @@ enum ReportedAgentStore {
     /// the Agent panel.
     static let newAgentsPerMinute = 10
 
+    /// The earliest a report may say it was sent, before now.
+    static let oldestReport: TimeInterval = 300
+
     enum Refusal: Error, Equatable {
         case tooManyNewAgents
     }
@@ -41,9 +44,11 @@ enum ReportedAgentStore {
         guard try isMonitoring(in: db) else { return nil }
         try ReportedAgentRow.filter(Column("lastReportAt") < now.addingTimeInterval(-retention)).deleteAll(db)
 
-        // The time the CLI started, never later than now: a report's own
-        // claim about time is untrusted too.
-        let reportedAt = min(report.reportedAt ?? now, now)
+        // The time the CLI started, never later than now nor more than
+        // `oldestReport` before it: a report's own claim about time is
+        // untrusted too, and one far in the past would otherwise never
+        // count as news.
+        let reportedAt = max(now.addingTimeInterval(-oldestReport), min(report.reportedAt ?? now, now))
         let state = report.status.state
         let existing = try ReportedAgentRow
             .filter(Column("source") == report.source.rawValue && Column("agentKey") == report.identity)
