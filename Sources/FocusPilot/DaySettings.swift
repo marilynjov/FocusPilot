@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Settings › Day: working hours and the blocks fixed every day, such as
 /// lunch. Each change is saved once it passes the plan's rules; a new day's
-/// plan starts from what is saved here.
+/// plan starts from what is saved here, and today's takes the new hours.
 struct DaySettings: View {
     let model: AppModel
     @State private var draft = DayPreferences.standard
@@ -17,6 +17,15 @@ struct DaySettings: View {
         Form {
             if let error = model.dayPreferencesError {
                 Section { SettingsError(message: error) }
+            }
+            if let kept = model.todayKeptHours, model.dayPreferencesError == nil {
+                Section {
+                    Label("Saved for new days. Today’s plan keeps \(DayPlanText.times(kept)) because one of its blocks is outside the new hours. Move that block, then apply.",
+                          systemImage: "info.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Button("Apply to Today") { Task { await model.applyWorkingHoursToToday() } }
+                }
             }
             Section("Working hours") {
                 DatePicker("Start", selection: time($draft.workingHours.start), displayedComponents: .hourAndMinute)
@@ -44,7 +53,7 @@ struct DaySettings: View {
             } header: {
                 Text("Fixed every day")
             } footer: {
-                Text("New days start with these hours and blocks. Today’s plan keeps the ones it started with; to skip or move lunch just for today, change it on Today’s plan.")
+                Text("New days start with these hours and blocks. Today’s plan takes new working hours too, unless one of its blocks would fall outside them; it keeps its fixed blocks. To skip or move lunch just for today, change it on Today’s plan.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

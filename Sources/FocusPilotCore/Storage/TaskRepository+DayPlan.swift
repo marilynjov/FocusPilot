@@ -11,6 +11,15 @@ public enum DayPlanError: Error, Equatable {
     case invalid(DayPlanProblem)
 }
 
+/// What saving the day preferences did to today's plan.
+public enum DayPreferencesSave: Equatable, Sendable {
+    /// Today's plan, if there is one, now has the new working hours.
+    case appliedToToday
+    /// A block on today's plan falls outside the new hours, so today keeps
+    /// these; new days start with the new ones.
+    case todayKept(TimeSpan)
+}
+
 /// What a block edit did.
 public enum DayPlanEdit: Equatable, Sendable {
     case saved(DayPlan)
@@ -35,10 +44,26 @@ extension TaskRepository {
     }
 
     /// Saves preferences that pass `DayPreferences.problem`, or throws
-    /// `invalid`. Plans already created keep what they started with.
-    public func saveDayPreferences(_ preferences: DayPreferences) async throws {
+    /// `invalid`. The working hours also go to the plan for `today` when all
+    /// its blocks fit them (owner request, 2026-11-02); its state stays, since
+    /// no block moves. Fixed blocks such as lunch, and other plans already
+    /// created, keep what they started with.
+    @discardableResult
+    public func saveDayPreferences(_ preferences: DayPreferences, today: LocalDate? = nil) async throws -> DayPreferencesSave {
         if let problem = preferences.problem { throw DayPlanError.invalid(problem) }
-        try await ownerDatabase.write { db in try DayPreferencesRow(preferences).save(db) }
+        return try await ownerDatabase.write { db in
+            try DayPreferencesRow(preferences).save(db)
+            guard let today, let plan = try Self.dayPlan(today, db), plan.workingHours != preferences.workingHours else {
+                return .appliedToToday
+            }
+            guard DayPlanRules.problems(in: plan.blocks, workingHours: preferences.workingHours).isEmpty else {
+                return .todayKept(plan.workingHours)
+            }
+            try db.execute(sql: "UPDATE dayPlan SET workStart = ?, workEnd = ? WHERE date = ?",
+                           arguments: [preferences.workingHours.start.description, preferences.workingHours.end.description,
+                                       today.isoString])
+            return .appliedToToday
+        }
     }
 
     /// The plan for `date`, created as a draft from the current preferences

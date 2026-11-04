@@ -49,24 +49,66 @@ struct DayPlanStorageTests {
         #expect(try await repository.dayPlan(for: today) == plan)
     }
 
-    @Test func savedPreferencesApplyToNewDaysOnly() async throws {
+    @Test func savedHoursApplyToTodayAndOtherPreferencesToNewDaysOnly() async throws {
         _ = try await repository.dayPlan(for: today)
         let preferences = DayPreferences(
-            workingHours: TimeSpan(ClockTime(8, 0), ClockTime(16, 0)),
+            workingHours: TimeSpan(ClockTime(8, 0), ClockTime(21, 0)),
             fixedBlocks: [.init(kind: .lunch, start: ClockTime(12, 30), end: ClockTime(13, 30)),
                           .init(kind: .break, start: ClockTime(10, 0), end: ClockTime(10, 15))]
         )
 
-        try await repository.saveDayPreferences(preferences)
+        let saved = try await repository.saveDayPreferences(preferences, today: today)
 
+        #expect(saved == .appliedToToday)
         #expect(try await repository.dayPreferences() == preferences)
         let existing = try await repository.dayPlan(for: today)
-        #expect(existing.workingHours == DayPreferences.standard.workingHours)
+        #expect(existing.workingHours == preferences.workingHours)
         #expect(existing.blocks.map(\.start) == [ClockTime(12, 0)])
+        let evening = try await repository.addBlock(DayBlock(kind: .task, start: ClockTime(19, 0), end: ClockTime(20, 0)), to: today)
+        guard case .saved = evening else { Issue.record("A block in the new hours was not saved: \(evening)"); return }
         let next = try await repository.dayPlan(for: tomorrow)
         #expect(next.workingHours == preferences.workingHours)
         #expect(next.blocks.map(\.kind) == [.break, .lunch])
         #expect(next.blocks.allSatisfy { $0.isFixed })
+    }
+
+    @Test func todayKeepsItsHoursWhenABlockWouldFallOutside() async throws {
+        _ = try await repository.dayPlan(for: today)
+        let early = DayBlock(kind: .task, start: ClockTime(9, 0), end: ClockTime(10, 0))
+        _ = try await repository.addBlock(early, to: today)
+        let approved = try await repository.approveDayPlan(for: today)
+        var preferences = DayPreferences.standard
+        preferences.workingHours = TimeSpan(ClockTime(10, 0), ClockTime(18, 0))
+
+        let saved = try await repository.saveDayPreferences(preferences, today: today)
+
+        #expect(saved == .todayKept(TimeSpan(ClockTime(9, 0), ClockTime(17, 0))))
+        #expect(try await repository.dayPreferences() == preferences)
+        let plan = try await repository.dayPlan(for: today)
+        #expect(plan.workingHours == DayPreferences.standard.workingHours)
+        #expect(plan.state == approved.state)
+    }
+
+    @Test func savingWithoutAPlanForTodayCreatesNone() async throws {
+        var preferences = DayPreferences.standard
+        preferences.workingHours = TimeSpan(ClockTime(7, 0), ClockTime(19, 0))
+
+        #expect(try await repository.saveDayPreferences(preferences, today: today) == .appliedToToday)
+        await #expect(throws: DayPlanError.planNotFound) { try await repository.approveDayPlan(for: today) }
+    }
+
+    @Test func otherDaysAndSavesWithoutTodayKeepTheirHours() async throws {
+        _ = try await repository.dayPlan(for: today)
+        _ = try await repository.dayPlan(for: tomorrow)
+        var preferences = DayPreferences.standard
+        preferences.workingHours = TimeSpan(ClockTime(7, 0), ClockTime(19, 0))
+
+        try await repository.saveDayPreferences(preferences)
+        #expect(try await repository.dayPlan(for: today).workingHours == DayPreferences.standard.workingHours)
+
+        try await repository.saveDayPreferences(preferences, today: today)
+        #expect(try await repository.dayPlan(for: today).workingHours == preferences.workingHours)
+        #expect(try await repository.dayPlan(for: tomorrow).workingHours == DayPreferences.standard.workingHours)
     }
 
     @Test func invalidPreferencesAreRefused() async throws {
