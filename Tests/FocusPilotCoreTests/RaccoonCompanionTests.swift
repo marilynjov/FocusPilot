@@ -117,27 +117,35 @@ struct RaccoonCompanionTests {
         #expect(RaccoonArtTests.manifest.pose(RaccoonPresence.workingPose)?.name == "Working")
     }
 
-    @Test func pausedSitsAndABreakHasCoffee() {
+    @Test func pausedSitsABreakHasCoffeeAndLunchIsANap() {
         #expect(RaccoonActivity(.running) == .working)
         #expect(RaccoonActivity(.paused(since: .now)) == .paused)
         #expect(RaccoonActivity(.onBreak(until: .now)) == .onBreak)
+        #expect(RaccoonActivity(.onBreak(until: .now), isLunch: true) == .onLunch)
+        #expect(RaccoonActivity(.running, isLunch: true) == .working)
+        #expect(RaccoonActivity.onLunch.poseID == "sleep")
         #expect(RaccoonActivity(.ended(at: .now, reason: .completed)) == nil)
         #expect(RaccoonActivity(nil) == nil)
-        for activity in [RaccoonActivity.working, .paused, .onBreak] {
+        for activity in [RaccoonActivity.working, .paused, .onBreak, .onLunch] {
             #expect(RaccoonArtTests.manifest.pose(activity.poseID) != nil, "\(activity)")
         }
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .paused) == RaccoonPresence(poseID: "sit"))
     }
 
-    @Test func theWindowShowsTheTaskOnlyInOnScreenModeAndNeverDuringAPeek() {
+    @Test func theWindowShowsTheTaskInOnScreenModeAndPeeksWhileInFront() {
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working) == RaccoonPresence(poseID: "laptop"))
         #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working) == nil)
-        // A peek shows in the floating window only, never in both.
-        let peek = RaccoonPeek(poseID: "peek")
-        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, peek: peek) == nil)
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
+        // While the window is in front a peek shows there, never on screen too.
+        let peek = RaccoonPeek(poseID: "peek", message: "10 minutes left")
+        for mode in [RaccoonCompanionMode.staysOnScreen, .peeksForReminders] {
+            #expect(RaccoonPresence.inWindow(mode: mode, activity: .working, peek: peek)
+                == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
+            #expect(RaccoonPresence.resolve(mode: mode, activity: .working, isWindowOpen: true, peek: peek) == nil)
+        }
+        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: nil, peek: peek)?.poseID == "peek")
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: nil) == nil)
         #expect(RaccoonPresence.inWindow(mode: .off, activity: .working) == nil)
+        #expect(RaccoonPresence.inWindow(mode: .off, activity: .working, peek: peek) == nil)
     }
 
     @Test func peeksShowOnlyWhenAReminderAsks() {
@@ -145,7 +153,18 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: .working, isWindowOpen: false, peek: nil) == nil)
         #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: nil, isWindowOpen: false, peek: peek)
             == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
+        // In another app the floating raccoon shows it.
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: peek)?.poseID == "peek")
+    }
+
+    @Test func inFrontThePeekHasAPlaceOnEveryPage() {
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: true, isTodayEmpty: false) == .nowCard)
+        // An empty Today has no Now card: the corner, not nowhere.
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: true, isTodayEmpty: true) == .corner)
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: false, isTodayEmpty: false) == .corner)
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: false, isTodayEmpty: true) == .corner)
+        // In another app the floating raccoon shows it.
+        #expect(RaccoonPresence.windowSpot(isInFront: false, isToday: true, isTodayEmpty: false) == nil)
     }
 
     @Test func offShowsNothing() {

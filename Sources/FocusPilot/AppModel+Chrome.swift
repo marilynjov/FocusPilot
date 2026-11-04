@@ -38,6 +38,10 @@ extension AppModel {
         let profiles = (try? ChromeProfiles.statuses(location: location, currentRevision: snapshot.policy?.revision,
                                                      currentSource: source)) ?? []
         if profiles != chromeProfiles { chromeProfiles = profiles }
+        // Chrome showed its blocked page since the last look (D12).
+        let blockedPages = profiles.reduce(0) { $0 + $1.blockedPagesShown }
+        if let seen = chromeBlockedPagesSeen, blockedPages > seen { noteBlockedVisit() }
+        chromeBlockedPagesSeen = blockedPages
         // Only on a change: every write redraws the status, and this runs every 5 s.
         var evidence = protectionEvidence
         evidence.update(profiles)

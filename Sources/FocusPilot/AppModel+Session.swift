@@ -7,7 +7,33 @@ import FocusPilotCore
 extension AppModel {
     /// What the current focus session is doing, for the raccoon; nil
     /// when there is none.
-    var raccoonActivity: RaccoonActivity? { RaccoonActivity(snapshot.activeSession?.phase) }
+    /// Between task blocks, an approved plan's break or lunch counts too.
+    var raccoonActivity: RaccoonActivity? {
+        guard let session = snapshot.activeSession else {
+            return RaccoonMoments.planBreak(raccoonPlan, at: .now, timeZone: .autoupdatingCurrent)
+        }
+        return RaccoonActivity(session.phase, isLunch: RaccoonMoments.isOnLunch(session, plan: raccoonPlan, runs: raccoonRuns,
+                                                                              at: .now, timeZone: .autoupdatingCurrent))
+    }
+
+    /// The session that just reached its planned end, while "Keep going"
+    /// is still offered (as long as the raccoon's "Time's up" stays).
+    var keepGoingOffer: FocusSession? {
+        guard let session = snapshot.session, case .ended(let at, .reachedPlannedEnd) = session.phase,
+              now.timeIntervalSince(at) <= RaccoonMoments.timesUpDuration
+        else { return nil }
+        return session
+    }
+
+    /// Plays the sound for time running out, once per event, whether or not
+    /// FocusPilot is in front, unless the owner turned it off (2026-11-03).
+    func playTimeUpSound(_ sound: TimeUpSound) {
+        guard menuBarPreferences.playsTimeUpSound else { return }
+        switch sound {
+        case .up: NSSound(named: "Glass")?.play()
+        case .soon: NSSound(named: "Tink")?.play()
+        }
+    }
 
     /// The task a new session would run on: the pinned Now task.
     var nowTask: TodayItem? {
@@ -33,7 +59,9 @@ extension AppModel {
                 scheduleReconcile(at: snapshot.nextDeadline)
                 scheduleQuickTimerReconcile(at: snapshot.quickTimer?.nextDeadline)
                 focusPanel.update()
+                await refreshRaccoonPlan()
                 raccoon.update()
+                evaluateRaccoonMoments()
                 // Rules name the apps the Apps line shows; every rule edit publishes a policy.
                 if snapshot.policy?.revision != policyRevision {
                     policyRevision = snapshot.policy?.revision
@@ -108,6 +136,40 @@ extension AppModel {
     /// "I need more time" on a plan block's session: recorded only (D3).
     func requestMoreTime() async {
         await run { try await $0.requestMoreTime() }
+    }
+
+    /// "+10 min" on the session under way, running, paused or on a break.
+    /// On a plan block's session it also notes that the block needed more time.
+    func extend(minutes: Int) async {
+        guard let id = snapshot.activeSession?.id else { return }
+        let interval = TimeInterval(minutes * 60)
+        if await run({ try await $0.extend(by: interval) }) {
+            raccoonExtensions[id, default: 0] += interval
+            showRaccoonTired(minutes: minutes)
+        }
+    }
+
+    /// The tired raccoon after more time is asked for.
+    private func showRaccoonTired(minutes: Int) {
+        raccoon.show(RaccoonMoments.moreTime(minutes: minutes, at: .now))
+    }
+
+    /// "Keep going" once a session has ended: the same task and mode again.
+    func keepGoing(minutes: Int) async {
+        if await run({ try await $0.keepGoing(duration: TimeInterval(minutes * 60)) }) {
+            showRaccoonTired(minutes: minutes)
+        }
+    }
+
+    /// "Take a Break" for `minutes`: the countdown stands still meanwhile
+    /// (owner request, 2026-11-03).
+    func takeBreak(minutes: Int) async {
+        await run { try await $0.takeBreak(duration: TimeInterval(minutes * 60)) }
+    }
+
+    /// "Back to task": ends the break early.
+    func endBreak() async {
+        await run { try await $0.endBreak() }
     }
 
     func cancelEarlyEnd() async {

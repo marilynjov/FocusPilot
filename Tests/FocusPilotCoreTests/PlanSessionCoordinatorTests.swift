@@ -168,6 +168,61 @@ struct PlanSessionCoordinatorTests {
         #expect(await fixture.coordinator.snapshot().activeSession?.plannedEnd == at("13:30"))
     }
 
+    @Test func backToTaskEndsAPlanBreakForGood() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (11, 30), to: (13, 30))
+        moveClock(fixture, to: "12:00")
+        try await fixture.coordinator.reconcile()
+        #expect(await fixture.coordinator.snapshot().activeSession?.phase == .onBreak(until: at("13:00")))
+
+        fixture.advance(minutes: 20)
+        try await fixture.coordinator.endBreak()
+        try await fixture.coordinator.reconcile()
+
+        #expect(await fixture.coordinator.snapshot().activeSession?.phase == .running)
+        #expect(await fixture.publisher.published.last?.session?.resumesAt == nil)
+    }
+
+    @Test func moreTimeOnABlockExtendsItsSessionAndIsNoted() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (9, 30), to: (11, 0))
+
+        try await fixture.coordinator.extend(by: 10 * 60)
+
+        let snapshot = await fixture.coordinator.snapshot()
+        #expect(snapshot.activeSession?.plannedEnd == at("11:10"))
+        #expect(snapshot.activePlanRun?.moreTimeRequestedAt == at("10:00"))
+        #expect(await fixture.publisher.published.last?.session?.end == at("11:10"))
+        let stored = try await fixture.coordinator.repository.planToFollow(on: today).runs
+        #expect(stored.map(\.moreTimeRequestedAt) == [at("10:00")])
+    }
+
+    @Test func moreTimeRefusedNotesNothing() async throws {
+        let fixture = try await SessionFixture()
+        try await approve(fixture, block: (9, 30), to: (11, 0))
+
+        // The note goes in the same write as the session, so a refused
+        // extension leaves no note behind.
+        await #expect(throws: FocusEngineError.nonPositiveDuration) {
+            try await fixture.coordinator.extend(by: 0)
+        }
+
+        let stored = try await fixture.coordinator.repository.planToFollow(on: today).runs
+        #expect(stored.map(\.moreTimeRequestedAt) == [nil])
+        #expect(await fixture.coordinator.snapshot().activePlanRun?.moreTimeRequestedAt == nil)
+    }
+
+    @Test func theRaccoonReadsTodaysPlanWithoutCreatingOne() async throws {
+        let fixture = try await SessionFixture()
+        #expect(try await fixture.coordinator.planToFollowToday().plan == nil)
+
+        try await approve(fixture, block: (9, 30), to: (11, 0))
+
+        let (plan, runs) = try await fixture.coordinator.planToFollowToday()
+        #expect(plan?.state == .approved)
+        #expect(runs.count == 1)
+    }
+
     @Test func editingThePlanMakesItADraftThatStartsNothing() async throws {
         let fixture = try await SessionFixture()
         let taskID = try await approve(fixture, block: (10, 30), to: (11, 30))

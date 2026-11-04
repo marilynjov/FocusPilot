@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import FocusPilotCore
 
@@ -121,6 +122,99 @@ struct FocusSessionCoordinatorTests {
 
         await #expect(throws: FocusEngineError.sessionAlreadyActive) {
             try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        }
+    }
+
+    // MARK: +10 min and Keep going (D12)
+
+    @Test func takingABreakStopsTheCountdownAndBackToTaskGivesBackTheRest() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        fixture.advance(minutes: 10)
+
+        try await fixture.coordinator.takeBreak(duration: 10 * 60)
+
+        let onBreak = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(onBreak.plannedEnd == wednesdayMorningInBogota.addingTimeInterval(35 * 60))
+        #expect(await fixture.publisher.published.last?.session?.resumesAt == fixture.clock.now.addingTimeInterval(10 * 60))
+
+        fixture.advance(minutes: 4)
+        try await fixture.coordinator.endBreak()
+
+        let back = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(back.phase == .running)
+        #expect(back.plannedEnd == wednesdayMorningInBogota.addingTimeInterval(29 * 60))
+    }
+
+    @Test func moreTimeMovesThePlannedEndAndTheNextDeadline() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .strict)
+        fixture.advance(minutes: 20)
+
+        try await fixture.coordinator.extend(by: 10 * 60)
+
+        let later = wednesdayMorningInBogota.addingTimeInterval(35 * 60)
+        #expect(await fixture.coordinator.snapshot().activeSession?.plannedEnd == later)
+        #expect(await fixture.coordinator.snapshot().nextDeadline == later)
+        #expect(await fixture.publisher.published.last?.session?.end == later)
+    }
+
+    @Test func keepGoingStartsTheSameTaskInTheSameModeOnceTheSessionEnded() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .strict)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+
+        await #expect(throws: FocusEngineError.sessionAlreadyActive) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
+        }
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await fixture.coordinator.keepGoing(duration: 10 * 60)
+
+        let next = try #require(await fixture.coordinator.snapshot().activeSession)
+        #expect(next.id != first.id)
+        #expect(next.taskID == first.taskID)
+        #expect(next.action == first.action)
+        #expect(next.mode == .strict)
+        #expect(next.plannedEnd == fixture.clock.now.addingTimeInterval(10 * 60))
+    }
+
+    @Test(arguments: ["UPDATE task SET status = 'done' WHERE id = ?", "DELETE FROM task WHERE id = ?"])
+    func keepGoingNeedsTheTaskStillOpen(change: String) async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await DatabaseQueue(path: fixture.location.ownerDatabaseURL.path).write { db in
+            try db.execute(sql: change, arguments: [first.taskID])
+        }
+
+        await #expect(throws: FocusCoordinator.SessionError.noCurrentTask) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
+        }
+        #expect(await fixture.coordinator.snapshot().activeSession == nil)
+    }
+
+    @Test func keepGoingUsesTheTasksCurrentTitle() async throws {
+        let fixture = try await SessionFixture()
+        try await fixture.coordinator.startSession(duration: 25 * 60, mode: .normal)
+        let first = try #require(await fixture.coordinator.snapshot().activeSession)
+        fixture.advance(minutes: 25)
+        try await fixture.coordinator.reconcile()
+        try await DatabaseQueue(path: fixture.location.ownerDatabaseURL.path).write { db in
+            try db.execute(sql: "UPDATE task SET title = 'Explain the results' WHERE id = ?", arguments: [first.taskID])
+        }
+
+        try await fixture.coordinator.keepGoing(duration: 10 * 60)
+
+        #expect(await fixture.coordinator.snapshot().activeSession?.action == "Explain the results")
+    }
+
+    @Test func keepGoingNeedsASessionFirst() async throws {
+        let fixture = try await SessionFixture()
+        await #expect(throws: FocusCoordinator.SessionError.noCurrentTask) {
+            try await fixture.coordinator.keepGoing(duration: 10 * 60)
         }
     }
 }

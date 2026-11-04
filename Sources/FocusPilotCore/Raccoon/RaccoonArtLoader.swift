@@ -179,15 +179,45 @@ public enum RaccoonCompanionMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A button under the raccoon's speech bubble (D12). Each runs the same
+/// app command as the menu bar and focus panel; none has logic of its own.
+public enum RaccoonPeekAction: Hashable, Sendable {
+    /// Dismisses the peek.
+    case gotIt
+    /// Adds time to the session under way.
+    case extend(minutes: Int)
+    /// Starts a new session on the same task once one has ended.
+    case keepGoing(minutes: Int)
+    /// Takes a break the owner chose, which stops the countdown.
+    case takeBreak(minutes: Int)
+    /// Ends the break.
+    case backToTask
+    /// Dismisses the peek after a session ended.
+    case done
+
+    public var title: String {
+        switch self {
+        case .gotIt: "Got it"
+        case .extend(let minutes): "+\(minutes) min"
+        case .keepGoing(let minutes): "Keep going +\(minutes) min"
+        case .takeBreak(let minutes): "Break \(minutes) min"
+        case .backToTask: "Back to task"
+        case .done: "Done"
+        }
+    }
+}
+
 /// A reminder that brings the raccoon in for a moment: which pose to show
-/// and, optionally, what its speech bubble says.
+/// and, optionally, what its speech bubble says and the buttons under it.
 public struct RaccoonPeek: Equatable, Sendable {
     public var poseID: String
     public var message: String?
+    public var actions: [RaccoonPeekAction]
 
-    public init(poseID: String, message: String? = nil) {
+    public init(poseID: String, message: String? = nil, actions: [RaccoonPeekAction] = []) {
         self.poseID = poseID
         self.message = message
+        self.actions = actions
     }
 }
 
@@ -196,23 +226,28 @@ public enum RaccoonActivity: Equatable, Sendable {
     case working
     case paused
     case onBreak
+    /// On a break that is the plan's lunch (owner request, 2026-11-02).
+    case onLunch
 
-    /// Nil when no session is under way.
-    public init?(_ phase: SessionPhase?) {
+    /// Nil when no session is under way. `isLunch` comes from the plan
+    /// (`RaccoonMoments.isOnLunch`).
+    public init?(_ phase: SessionPhase?, isLunch: Bool = false) {
         switch phase {
         case .running: self = .working
         case .paused: self = .paused
-        case .onBreak: self = .onBreak
+        case .onBreak: self = isLunch ? .onLunch : .onBreak
         case .ended, nil: return nil
         }
     }
 
-    /// Working at the laptop, sitting while paused, coffee on a break.
+    /// Working at the laptop, sitting while paused, coffee on a break, a
+    /// nap at lunch.
     public var poseID: String {
         switch self {
         case .working: RaccoonPresence.workingPose
         case .paused: RaccoonPresence.idlePose
         case .onBreak: RaccoonPresence.breakPose
+        case .onLunch: RaccoonPresence.lunchPose
         }
     }
 }
@@ -223,6 +258,7 @@ public struct RaccoonPresence: Equatable, Sendable {
     public static let idlePose = "sit"
     public static let workingPose = "laptop"
     public static let breakPose = "coffee"
+    public static let lunchPose = "sleep"
 
     public var poseID: String
     public var message: String?
@@ -233,10 +269,13 @@ public struct RaccoonPresence: Equatable, Sendable {
     }
 
     /// The floating window: the task's pose while a session is under way
-    /// and the planning window is closed (the window shows it instead); a
-    /// peek replaces that while it lasts. Peeks-in mode shows only peeks.
+    /// and the planning window is not in front (the window shows it
+    /// instead); a peek replaces that while it lasts. Peeks-in mode shows
+    /// only peeks. While the window is in front it shows nothing, peeks
+    /// included: they show in the window (owner request, 2026-11-03).
     public static func resolve(mode: RaccoonCompanionMode, activity: RaccoonActivity?, isWindowOpen: Bool,
                                peek: RaccoonPeek?) -> RaccoonPresence? {
+        guard !isWindowOpen else { return nil }
         switch mode {
         case .off:
             return nil
@@ -244,17 +283,32 @@ public struct RaccoonPresence: Equatable, Sendable {
             return peek.map { RaccoonPresence(poseID: $0.poseID, message: $0.message) }
         case .staysOnScreen:
             if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
-            guard let activity, !isWindowOpen else { return nil }
-            return RaccoonPresence(poseID: activity.poseID)
+            return activity.map { RaccoonPresence(poseID: $0.poseID) }
         }
     }
 
-    /// The planning window, in On screen mode: the task's pose while a
-    /// session is under way. Hidden during a peek, which the floating
-    /// window shows, so there is only ever one raccoon.
+    /// Where the planning window draws its raccoon while in front: in the
+    /// Now card on Today, which shows it whenever Today has tasks, else in
+    /// the window's corner, so a peek is never left with nowhere to show.
+    public enum WindowSpot: Equatable, Sendable {
+        case nowCard, corner
+    }
+
+    /// Nil while the window is not in front: the floating raccoon shows.
+    public static func windowSpot(isInFront: Bool, isToday: Bool, isTodayEmpty: Bool) -> WindowSpot? {
+        guard isInFront else { return nil }
+        return isToday && !isTodayEmpty ? .nowCard : .corner
+    }
+
+    /// The planning window while it is in front: a peek, with its bubble,
+    /// in On screen and Peeks-in modes, else in On screen mode the task's
+    /// pose while a session is under way. The floating window then shows
+    /// nothing, so there is only ever one raccoon.
     public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?,
                                 peek: RaccoonPeek? = nil) -> RaccoonPresence? {
-        guard mode == .staysOnScreen, peek == nil, let activity else { return nil }
+        guard mode != .off else { return nil }
+        if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
+        guard mode == .staysOnScreen, let activity else { return nil }
         return RaccoonPresence(poseID: activity.poseID)
     }
 }

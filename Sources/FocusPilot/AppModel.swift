@@ -52,6 +52,30 @@ final class AppModel {
     }
     /// The reminder the raccoon is peeking in with (D12), if any.
     var raccoonPeek: RaccoonPeek?
+    /// Today's plan and its block runs, for the raccoon's moments and its
+    /// lunch nap; see `AppModel+Raccoon.swift`.
+    var raccoonPlan: DayPlan?
+    @ObservationIgnored var raccoonPlanRuns: [PlanRun] = []
+    /// Moments already shown and when, kept in memory only, so each shows once.
+    @ObservationIgnored var raccoonShownMoments: [RaccoonMoment.ID: Date] = [:]
+    /// When a blocked app was last hidden or Chrome last showed its blocked page.
+    @ObservationIgnored var lastBlockedVisitAt: Date?
+    /// Blocked pages Chrome had shown at the last look; nil before the first.
+    @ObservationIgnored var chromeBlockedPagesSeen: Int?
+    /// Each session's length as planned when first seen, so pauses and
+    /// breaks the owner takes, which move its planned end, don't change
+    /// which end warning it gets. In memory, like `raccoonExtensions`; a
+    /// session first seen after a relaunch counts from its end then.
+    @ObservationIgnored var raccoonStartLengths: [UUID: TimeInterval] = [:]
+    /// Time "+10 min" added to each session, so its end warning comes back
+    /// before the new end. In memory, like `raccoonShownMoments`.
+    @ObservationIgnored var raccoonExtensions: [UUID: TimeInterval] = [:]
+    /// The last break the owner took that ran out, for "Break's over".
+    @ObservationIgnored var raccoonEndedBreak: RaccoonMoments.EndedBreak?
+    /// Counts plan reads, so an older read finishing late is dropped.
+    @ObservationIgnored var raccoonPlanReads = 0
+    /// Looks for time-based moments; see `followRaccoonMoments`.
+    @ObservationIgnored var raccoonMomentsTask: Task<Void, Never>?
     /// The raccoon shows in the planning window while the owner is looking
     /// at it, and on screen otherwise (owner request, 2026-11-02).
     var raccoonIsInWindow: Bool { isPlanningWindowOpen && isPlanningWindowInFront }
@@ -142,6 +166,7 @@ final class AppModel {
         displayPreferences.raccoonModeDidChange = { [weak self] _ in
             self?.raccoon.update()
             self?.focusPanel.update()
+            Task { await self?.refreshRaccoonMoments() }
         }
         displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
         refreshRaccoonWindowState()
@@ -150,6 +175,7 @@ final class AppModel {
         tickWhileTimeIsShown()
         watchHerdr()
         followSessions()
+        followRaccoonMoments()
     }
 
     /// Answers the focuspilot CLI, and imports what it queued while the app
@@ -230,7 +256,8 @@ final class AppModel {
         Task { [weak self] in
             while let self {
                 try? await Task.sleep(for: .seconds(1))
-                if snapshot.activeSession != nil || snapshot.quickTimer != nil || menuBarStatus().timeText != nil {
+                if snapshot.activeSession != nil || snapshot.quickTimer != nil || menuBarStatus().timeText != nil
+                    || keepGoingOffer != nil {
                     now = .now
                 }
             }
@@ -243,6 +270,11 @@ final class AppModel {
         now = .now
         guard latest.revision >= snapshot.revision else { return }
         noticeWrapUp(from: snapshot.session, to: latest.session)
+        noteRaccoonBreakEnd(from: snapshot.session, to: latest.session)
+        if let sound = TimeUpSound.due(from: snapshot, to: latest, at: .now) { playTimeUpSound(sound) }
+        if let session = latest.activeSession, raccoonStartLengths[session.id] == nil {
+            raccoonStartLengths[session.id] = session.plannedEnd.timeIntervalSince(session.startedAt)
+        }
         snapshot = latest
         if latest.activeSession == nil || latest.earlyEndAvailableAt != nil {
             isConfirmingEarlyEnd = false

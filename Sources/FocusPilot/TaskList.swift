@@ -18,6 +18,8 @@ struct TaskList: View {
     /// Undo is not offered for the task a session is running on.
     var activeSessionTaskID: Int64?
     @Binding var selection: Int64?
+    /// False when the page shows the Now card itself, above the list.
+    var showsNow = true
     @Environment(AppModel.self) private var model: AppModel?
 
     var body: some View {
@@ -25,7 +27,7 @@ struct TaskList: View {
         // Relative labels ("Due today 17:00", "Overdue …") change with time.
         TimelineView(.everyMinute) { context in
             List(selection: $selection) {
-                if sections.now != nil || showsEmptyNow {
+                if showsNow, sections.now != nil || showsEmptyNow {
                     Section {
                         NowCard(item: sections.now, caption: nowCaption, showsProject: showsProject, now: context.date)
                             // The list measures a row once; a new identity when

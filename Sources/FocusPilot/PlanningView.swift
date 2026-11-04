@@ -43,7 +43,11 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
-                .overlay(alignment: .bottomTrailing) { RaccoonWindowView(model: model) }
+                // On Today the raccoon is inside the Now card instead; an
+                // empty Today has none, so it stays in the corner there.
+                .overlay(alignment: .bottomTrailing) {
+                    if raccoonSpot == .corner { RaccoonWindowView(model: model) }
+                }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
@@ -136,6 +140,12 @@ struct PlanningView: View {
         }
     }
 
+    /// Where the raccoon is drawn in this window while it is in front.
+    private var raccoonSpot: RaccoonPresence.WindowSpot? {
+        RaccoonPresence.windowSpot(isInFront: model.raccoonIsInWindow, isToday: page == .today || page == nil,
+                                   isTodayEmpty: model.today.isEmpty || model.startupError != nil)
+    }
+
     @ViewBuilder private var content: some View {
         if let startupError = model.startupError {
             ContentUnavailableView("Database unavailable", systemImage: "exclamationmark.triangle", description: Text(startupError))
@@ -148,16 +158,58 @@ struct PlanningView: View {
         } else if page == .settings {
             SettingsPage(model: model)
         } else {
+            todayPage
+        }
+    }
+
+    /// Today (owner request, 2026-11-03): the current task across the top;
+    /// under it the rest of the list with the Quick timer at the bottom, and
+    /// the selected task's Agent column to the right of both.
+    @ViewBuilder private var todayPage: some View {
+        if model.today.isEmpty {
             VStack(spacing: 0) {
-                QuickTimerCard(model: model)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
                 todayTasks
+                quickTimer
+            }
+        } else {
+            VStack(spacing: 0) {
+                TimelineView(.everyMinute) { context in
+                    let now = TaskSections(model.today).now
+                    let isSelected = now != nil && todaySelection == now?.id
+                    NowCard(item: now, caption: nil, showsProject: true, now: context.date,
+                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected)
+                        .contentShape(Rectangle())
+                        .onTapGesture { todaySelection = now?.id }
+                        // Reachable without a pointer: Return selects it, and
+                        // VoiceOver offers the same.
+                        .focusable(now != nil)
+                        .onKeyPress(.return) {
+                            guard let now else { return .ignored }
+                            todaySelection = now.id
+                            return .handled
+                        }
+                        .accessibilityAction(named: "Show Agent Panel") { todaySelection = now?.id }
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                VStack(spacing: 0) {
+                    todayTasks
+                    quickTimer
+                }
+                .taskInspector(model: model, items: model.today, selection: $todaySelection,
+                               showReviewQueue: { page = .review })
             }
         }
     }
 
-    /// Today's tasks under the Quick timer card (D2).
+    private var quickTimer: some View {
+        QuickTimerCard(model: model)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+    }
+
+    /// Today's tasks under the Now card, above the Quick timer card (D2).
     @ViewBuilder private var todayTasks: some View {
         if model.today.isEmpty {
             ContentUnavailableView(
@@ -170,23 +222,25 @@ struct PlanningView: View {
                      move: { id, status, placement in Task { await model.move(id, to: status, placement) } },
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
-                     selection: $todaySelection)
-                .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                               showReviewQueue: { page = .review })
+                     selection: $todaySelection, showsNow: false)
         }
     }
 }
 
 extension View {
-    /// The selected task's Agent section in an inspector, open while a task
-    /// is selected.
+    /// The selected task's Agent section in a column beside the list, shown
+    /// while a task is selected. A plain column, not a window inspector, so
+    /// it sits under whatever is above the list (the Quick timer on Today)
+    /// and leaves the title bar whole (owner feedback, 2026-11-03).
     func taskInspector(model: AppModel, items: [TodayItem], selection: Binding<Int64?>,
                        showReviewQueue: @escaping () -> Void) -> some View {
-        inspector(isPresented: Binding(get: { selection.wrappedValue != nil },
-                                       set: { if !$0 { selection.wrappedValue = nil } })) {
+        HStack(spacing: 0) {
+            self
             if let task = items.first(where: { $0.id == selection.wrappedValue }) {
+                Divider()
                 TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue)
-                    .inspectorColumnWidth(min: 260, ideal: 300, max: 400)
+                    .frame(width: 300)
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }

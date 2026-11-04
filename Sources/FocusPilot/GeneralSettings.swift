@@ -22,6 +22,8 @@ struct GeneralSettings: View {
                 Toggle("Show time left in the menu bar", isOn: $preferences.showsTime)
             }
             Section("Sessions") {
+                Toggle("Play a sound when time is up", isOn: $preferences.playsTimeUpSound)
+                    .help("A short sound when a session, a break or a quick timer is up, and a softer one shortly before")
                 Toggle("Show the focus panel during sessions", isOn: $preferences.showsFocusPanel)
                     .onChange(of: preferences.showsFocusPanel) { model.focusPanel.update() }
                     .disabled(display.raccoonMode == .staysOnScreen && model.raccoon.problem == nil)

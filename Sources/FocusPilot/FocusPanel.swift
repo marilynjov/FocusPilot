@@ -185,16 +185,20 @@ struct FocusPanelView: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor))
-            Divider()
+            .background(palette.color(.surface))
+            // Solid palette colors: the see-through bar material let the
+            // desktop show between the two parts (owner feedback, 2026-11-04).
+            Rectangle()
+                .fill(palette.color(.line))
+                .frame(height: 1)
             SessionControls(model: model)
                 .controlSize(.regular)
                 .padding(12)
-                .barBackground()
+                .background(palette.color(.bg))
         }
         .frame(width: 320)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.color(.line)))
     }
 
     private func pill(_ session: FocusSession) -> some View {
@@ -218,8 +222,8 @@ struct FocusPanelView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
-            .overlay(Capsule().stroke(.separator))
+            .background(palette.color(.surface), in: Capsule())
+            .overlay(Capsule().stroke(palette.color(.line)))
         }
         .buttonStyle(.plain)
         .help("Expand")

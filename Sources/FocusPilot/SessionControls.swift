@@ -1,8 +1,10 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Pause or Resume, and Complete, for the active session. Shared by the menu
-/// bar popover, the focus panel and the Now card, so they behave the same.
+/// Take a Break (Back to Task on a break, Resume if paused), +10 min, and
+/// Complete, for the active session, and Keep Going for a minute after one
+/// reached its end. Shared by the menu bar popover, the focus panel and the Now card,
+/// so they behave the same.
 ///
 /// Completing a strict session before its planned end first asks for
 /// confirmation, then waits `StrictEarlyEnd.wait` with a countdown; the
@@ -11,7 +13,8 @@ import SwiftUI
 ///
 /// A session started by a plan block (D3) offers "Done early", which ends
 /// the block and the session, and "I need more time", which is recorded
-/// for replanning (D10) while the block keeps its end.
+/// for replanning (D10) while the block keeps its end. "+10 min" on a
+/// block's session records that too, and moves the session's end.
 struct SessionControls: View {
     let model: AppModel
     /// Off where the return cue is already on screen, as in the Now card.
@@ -31,6 +34,10 @@ struct SessionControls: View {
                     }
                     HStack(spacing: 8) {
                         pauseButton(session)
+                        Button { Task { await model.extend(minutes: RaccoonMoments.extraMinutes) } } label: {
+                            Text("+\(RaccoonMoments.extraMinutes) min").frame(maxWidth: .infinity)
+                        }
+                        .help("Adds \(RaccoonMoments.extraMinutes) minutes to this session")
                         Button { Task { await model.complete() } } label: {
                             Label(planRun == nil ? "Complete" : "Done early", systemImage: "checkmark.circle")
                                 .frame(maxWidth: .infinity)
@@ -43,6 +50,14 @@ struct SessionControls: View {
                     }
                 }
             }
+        } else if model.keepGoingOffer != nil {
+            // Also on the raccoon's "Time's up", which is easy to miss.
+            Button { Task { await model.keepGoing(minutes: RaccoonMoments.extraMinutes) } } label: {
+                Label("Keep Going +\(RaccoonMoments.extraMinutes) min", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .help("Starts \(RaccoonMoments.extraMinutes) more minutes on the same task")
         }
     }
 
@@ -56,8 +71,7 @@ struct SessionControls: View {
             Button { Task { await model.requestMoreTime() } } label: { wide("I need more time") }
                 .help("Notes that this block needs more time. The block still ends on time for now.")
         } else {
-            Label("More time noted. This block still ends on time; changing the plan for it comes later.",
-                  systemImage: "clock.badge.checkmark")
+            Label("More time noted for when the plan is changed.", systemImage: "clock.badge.checkmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -65,14 +79,31 @@ struct SessionControls: View {
 
     @ViewBuilder
     private func pauseButton(_ session: FocusSession) -> some View {
-        if case .paused = session.phase {
+        if case .onBreak = session.phase {
+            Button { Task { await model.endBreak() } } label: {
+                Label("Back to Task", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity)
+            }
+            .help("Ends the break")
+        } else if case .paused = session.phase {
             Button { Task { await model.resume() } } label: {
                 Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
             }
         } else {
-            Button { Task { await model.pause() } } label: {
-                Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
+            // Take a Break replaces Pause (owner request, 2026-11-03): the
+            // countdown stands still for the break. A session paused before
+            // this still shows Resume above.
+            Menu {
+                ForEach(RaccoonMoments.breakChoices, id: \.self) { minutes in
+                    Button("\(minutes) minutes") { Task { await model.takeBreak(minutes: minutes) } }
+                }
+            } label: {
+                Label("Break", systemImage: "cup.and.saucer").frame(maxWidth: .infinity)
             }
+            // A short title fits beside +10 min and Complete; the menu says
+            // the rest.
+            .menuIndicator(.hidden)
+            .help("Take a break: stops the countdown")
+            .accessibilityLabel("Take a Break")
             .disabled(session.phase != .running)
         }
     }
