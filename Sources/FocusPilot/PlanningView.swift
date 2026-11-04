@@ -148,12 +148,17 @@ struct PlanningView: View {
         } else if page == .settings {
             SettingsPage(model: model)
         } else {
+            // The inspector belongs to the whole page, so it runs the
+            // window's full height beside the timer and the list instead of
+            // opening under the timer card.
             VStack(spacing: 0) {
                 QuickTimerCard(model: model)
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                 todayTasks
             }
+            .taskInspector(model: model, items: model.today, selection: $todaySelection,
+                           showReviewQueue: { page = .review })
         }
     }
 
@@ -171,8 +176,6 @@ struct PlanningView: View {
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
                      selection: $todaySelection)
-                .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                               showReviewQueue: { page = .review })
         }
     }
 }
