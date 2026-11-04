@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>When you click Go to agent, FocusPilot selects the agent’s tab in Terminal or iTerm2. It does nothing else with them.</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

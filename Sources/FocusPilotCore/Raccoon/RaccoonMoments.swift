@@ -8,6 +8,8 @@ public struct RaccoonMoment: Equatable, Sendable {
     public enum Kind: Int, CaseIterable, Comparable, Hashable, Sendable {
         case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, breakOver, breakStarted, breakEnding,
              finished,
+             // An agent waiting for the owner (owner, 2026-11-03): high, below time's up.
+             needsYou,
              quickTimerUp, timesUp
 
         public static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
@@ -30,16 +32,19 @@ public struct RaccoonMoment: Equatable, Sendable {
     /// The session the moment is about; the app withdraws it once another
     /// session is the latest, so "Keep going" never acts on the wrong one.
     public var sessionID: UUID?
+    /// The reported agent a "needs you" moment is about.
+    public var agentID: Int64?
 
     public var kind: Kind { id.kind }
 
     /// Without a `duration`, a peek stays 8 seconds, or 20 with buttons,
     /// so there is time to choose.
-    public init(id: ID, peek: RaccoonPeek, duration: TimeInterval? = nil, sessionID: UUID? = nil) {
+    public init(id: ID, peek: RaccoonPeek, duration: TimeInterval? = nil, sessionID: UUID? = nil, agentID: Int64? = nil) {
         self.id = id
         self.peek = peek
         self.duration = duration ?? (peek.actions.isEmpty ? RaccoonMoments.peekDuration : RaccoonMoments.choiceDuration)
         self.sessionID = sessionID
+        self.agentID = agentID
     }
 }
 
@@ -79,6 +84,25 @@ public enum RaccoonMoments {
         }
     }
     public static let blockedCooldown: TimeInterval = 10 * 60
+
+    /// An agent that reported it needs the owner (decision 0005).
+    public struct AgentNeed: Equatable, Sendable {
+        public var agentID: Int64
+        public var label: String
+        /// When it reported it; each report is its own moment.
+        public var since: Date
+
+        public init(agentID: Int64, label: String, since: Date) {
+            self.agentID = agentID
+            self.label = label
+            self.since = since
+        }
+    }
+    /// "<label> needs you" stays up this long, or until a button is pressed.
+    public static let needsYouDuration: TimeInterval = 45
+    /// A request older than this when the raccoon could first show it is
+    /// left to the Agent panel, e.g. after the Mac woke.
+    static let needsYouFreshness: TimeInterval = 10 * 60
 
     /// The end warning comes 10 minutes before the end, or 2 minutes before
     /// it for a session planned shorter than 15 minutes (owner request,
@@ -138,14 +162,21 @@ public enum RaccoonMoments {
     /// The moment to show now, if any. `session` is the latest one, which
     /// may have ended; `extended` is the time "+10 min" has added to it;
     /// `endedBreak` is the last owner break that ran out; `quickTimer` is
-    /// the quick timer still running, if any; `shown` maps each moment shown
-    /// to when it was.
+    /// the quick timer still running, if any; `agentsNeedingYou` are
+    /// reported agents waiting for the owner, shown in every session mode,
+    /// strict included, paused or not, and with no session at all (owner,
+    /// 2026-11-03); `shown` maps each moment shown to when it was.
     public static func next(mode: RaccoonCompanionMode, session: FocusSession?, extended: TimeInterval = 0,
                             endedBreak: EndedBreak? = nil, quickTimer: QuickTimer? = nil, plan: DayPlan?,
-                            runs: [PlanRun], blockedVisitAt: Date?, shown: [RaccoonMoment.ID: Date], at now: Date,
+                            runs: [PlanRun], blockedVisitAt: Date?, agentsNeedingYou: [AgentNeed] = [],
+                            shown: [RaccoonMoment.ID: Date], at now: Date,
                             timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
         guard mode != .off else { return nil }
         var due: [RaccoonMoment] = []
+        // The latest request first, so it is the one shown when several wait.
+        for need in agentsNeedingYou.sorted(by: { $0.since > $1.since }) {
+            if let moment = needsYou(need, at: now) { due.append(moment) }
+        }
         if let quickTimer, let moment = quickTimerMoment(quickTimer, at: now) {
             due.append(moment)
         }
@@ -162,7 +193,9 @@ public enum RaccoonMoments {
         if let moment = blockedVisit(at: blockedVisitAt, shown: shown, now: now) {
             due.append(moment)
         }
-        return due.filter { shown[$0.id] == nil }.max { $0.kind < $1.kind }
+        // The first of the most pressing kind.
+        let pending = due.filter { shown[$0.id] == nil }
+        return pending.first { moment in !pending.contains { $0.kind > moment.kind } }
     }
 
     /// Whether the session is on a break that is the plan's lunch, so the
@@ -324,6 +357,16 @@ public enum RaccoonMoments {
         }
         return RaccoonMoment(id: .init(.blockedVisit, String(visit.timeIntervalSinceReferenceDate)),
                              peek: RaccoonPeek(poseID: "sign", message: "You got this"), duration: cheerDuration)
+    }
+
+    /// "<label> needs you" with Go to agent, once per report.
+    public static func needsYou(_ need: AgentNeed, at now: Date) -> RaccoonMoment? {
+        let age = now.timeIntervalSince(need.since)
+        guard age >= 0, age <= needsYouFreshness else { return nil }
+        let peek = RaccoonPeek(poseID: "sign", message: "\(need.label) needs you",
+                               actions: [.goToAgent(need.agentID), .gotIt])
+        return RaccoonMoment(id: .init(.needsYou, "\(need.agentID)-\(need.since.timeIntervalSinceReferenceDate)"),
+                             peek: peek, duration: needsYouDuration, agentID: need.agentID)
     }
 
     // MARK: Plan

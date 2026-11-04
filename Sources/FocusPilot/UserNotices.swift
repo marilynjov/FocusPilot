@@ -35,3 +35,21 @@ struct UserNotices: FocusNoticeSink {
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 }
+
+extension UserNotices {
+    /// Names the agent in a needs-you notification, so a click goes to it.
+    static let reportedAgentKey = "reportedAgentID"
+
+    /// "<label> needs you", with what the agent said, as plain text.
+    /// Clicking it goes to the agent (`NotificationClicks`).
+    static func deliverNeedsYou(agentID: Int64, label: String, message: String?) async {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let center = UNUserNotificationCenter.current()
+        _ = try? await center.requestAuthorization(options: [.alert, .sound, .provisional])
+        let content = UNMutableNotificationContent()
+        content.title = "\(label) needs you"
+        content.body = message ?? "It’s waiting for your answer."
+        content.userInfo = [reportedAgentKey: agentID]
+        try? await center.add(UNNotificationRequest(identifier: "needs-you-\(agentID)", content: content, trigger: nil))
+    }
+}

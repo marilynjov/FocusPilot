@@ -21,7 +21,19 @@ final class AppModel {
     /// Herdr's agents as last polled; nil while no task has a linked agent.
     private(set) var herdrAgents: HerdrAgents?
     private(set) var agentLinks: [TaskAgentLink] = []
-    private(set) var reviewItems: [ReviewItem] = []
+    /// The whole Review queue; `reviewItems` leaves out what waits for a break.
+    private(set) var allReviewItems: [ReviewItem] = []
+    /// Agents that report to FocusPilot themselves (decision 0005); see
+    /// `AppModel+ReportedAgents.swift`.
+    private(set) var reportedAgents: [ReportedAgent] = []
+    /// Agent monitoring as last read; off by default.
+    var isAgentMonitoringOn = false
+    var agentMonitoringError: String?
+    /// Agents that reported they need the owner, for the raccoon; kept
+    /// until they report something else or are gone.
+    @ObservationIgnored var agentsNeedingYou: [RaccoonMoments.AgentNeed] = []
+    /// Turns a needs-you notification click into Go to agent.
+    @ObservationIgnored let notificationClicks = NotificationClicks()
     /// Why the last Open agent did nothing, shown where it was clicked.
     var agentNotice: String?
     /// Set when a session command fails; shown by the session surfaces.
@@ -150,6 +162,7 @@ final class AppModel {
             let chromeHost = Bundle.main.bundleURL.appending(path: "Contents/Helpers/focuspilot-chrome-host")
             listenForCommands(location: location, service: CommandService(repository: repository, exceptions: coordinator,
                                                                           exceptionCaller: .chromeHost(at: chromeHost)))
+            followNotificationClicks()
             setUpChrome(location: location)
             followActivity(location: location)
         } catch {
@@ -179,7 +192,11 @@ final class AppModel {
     private func listenForCommands(location: StorageLocation, service: CommandService) {
         let server = CommandSocketServer(path: location.commandSocketPath) { [weak self] request, peer in
             let response = await service.handle(request, from: peer)
-            if case .added = response { await self?.refresh() }
+            switch response {
+            case .added: await self?.refresh()
+            case .agentRecorded(let receipt): await self?.agentReported(receipt)
+            default: break
+            }
             return response
         }
         do {
@@ -288,7 +305,9 @@ final class AppModel {
                 projectItems = try await coordinator.projectTasks(shownProject)
             }
             agentLinks = try await coordinator.agentLinks()
-            reviewItems = try await coordinator.reviewQueue()
+            allReviewItems = try await coordinator.reviewQueue()
+            reportedAgents = try await coordinator.reportedAgents()
+            isAgentMonitoringOn = try await coordinator.isAgentMonitoringOn()
             taskError = nil
         } catch {
             taskError = "Could not load tasks: \(error.localizedDescription)"

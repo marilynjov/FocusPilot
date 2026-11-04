@@ -1,7 +1,8 @@
 import FocusPilotCore
 import SwiftUI
 
-/// Settings › General: palette and appearance, menu bar, focus panel, raccoon and login.
+/// Settings › General: palette and appearance, menu bar, focus panel,
+/// raccoon, agent monitoring with the Claude Code hooks setup, and login.
 struct GeneralSettings: View {
     let model: AppModel
 
@@ -53,6 +54,7 @@ struct GeneralSettings: View {
                     Text(problem).font(.callout).foregroundStyle(.secondary)
                 }
             }
+            AgentMonitoringSection(model: model)
             Section("General") {
                 Toggle("Open at Login", isOn: Binding(
                     get: { model.loginItem.isEnabled },
@@ -64,6 +66,62 @@ struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Agent monitoring (decision 0005, step 1), off by default, and the hooks
+/// block for Claude Code with a Copy button. FocusPilot never edits the
+/// owner's Claude Code settings itself.
+private struct AgentMonitoringSection: View {
+    let model: AppModel
+    @State private var copied = false
+
+    /// The focuspilot command inside this app, so the hooks work without a
+    /// PATH link; "focuspilot" for a bare debug build.
+    private var snippet: String {
+        let helper = Bundle.main.bundleURL.appending(path: "Contents/Helpers/focuspilot")
+        let command = FileManager.default.isExecutableFile(atPath: helper.path) ? helper.path : "focuspilot"
+        return ClaudeHookSnippet.settings(command: command)
+    }
+
+    var body: some View {
+        Section("Agent monitoring") {
+            Toggle("Agent monitoring", isOn: Binding(
+                get: { model.isAgentMonitoringOn },
+                set: { on in Task { await model.setAgentMonitoring(on) } }
+            ))
+            Text("Agents that report through the focuspilot command or Claude Code hooks show in a task’s Agent panel, and their results go to Review queue. FocusPilot only listens: it never prompts, answers or stops an agent. While this is off, reports are refused. Herdr agents are not affected by this setting yet.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = model.agentMonitoringError {
+                Text(error).font(.callout).foregroundStyle(.secondary)
+            }
+        }
+        Section("Claude Code hooks") {
+            Text("To hear from Claude Code, add this to the \"hooks\" in ~/.claude/settings.json (merge it with any hooks you already have), then start a new Claude Code session. It reports a new session, a prompt, a request for your permission or input, and a finished turn. No usage or token figures are read.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView(.horizontal) {
+                Text(verbatim: snippet)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
+            }
+            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+            HStack {
+                Button(copied ? "Copied" : "Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(snippet, forType: .string)
+                    copied = true
+                }
+                Spacer()
+                Text("Steps and details: docs/agents/claude-code-hooks.md")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

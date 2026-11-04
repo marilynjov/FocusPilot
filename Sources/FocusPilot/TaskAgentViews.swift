@@ -1,9 +1,10 @@
 import FocusPilotCore
 import SwiftUI
 
-/// The selected task's Agent section (design 01): its linked Herdr agents,
-/// their status, and Open agent. Nothing here acts on its own; focusing a
-/// pane happens only when the owner clicks Open agent.
+/// The selected task's Agent section (design 01): its linked Herdr agents
+/// and the agents that report themselves (decision 0005), their status,
+/// and Open agent or Go to agent. Nothing here acts on its own; focusing a
+/// pane or a terminal happens only when the owner clicks.
 struct TaskAgentInspector: View {
     let model: AppModel
     let task: TodayItem
@@ -11,6 +12,9 @@ struct TaskAgentInspector: View {
     @State private var isLinking = false
 
     private var links: [TaskAgentLink] { model.agentLinks.filter { $0.taskID == task.id } }
+    private var reported: [ReportedAgent] { model.reportedAgents.filter { $0.taskID == task.id } }
+    /// Reported agents with no task, offered for linking by hand.
+    private var unlinked: [ReportedAgent] { model.reportedAgents.filter { $0.taskID == nil } }
 
     var body: some View {
         ScrollView {
@@ -29,8 +33,8 @@ struct TaskAgentInspector: View {
                         .buttonStyle(.borderless)
                         .controlSize(.small)
                 }
-                if links.isEmpty {
-                    Text("No Herdr agent is linked to this task. Linked agents report here and their results go to Review queue.")
+                if links.isEmpty && reported.isEmpty {
+                    Text("No agent is linked to this task. Linked Herdr agents, and agents that report through Claude Code hooks or the focuspilot command, show here and their results go to Review queue.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -40,6 +44,14 @@ struct TaskAgentInspector: View {
                                       reviewCount: model.reviewItems.filter { $0.linkID == link.id }.count,
                                       showReviewQueue: showReviewQueue)
                     }
+                    ForEach(reported) { agent in
+                        ReportedAgentView(model: model, agent: agent,
+                                          reviewCount: model.reviewItems.filter { $0.reportedAgentID == agent.id }.count,
+                                          showReviewQueue: showReviewQueue)
+                    }
+                }
+                if !unlinked.isEmpty {
+                    UnlinkedAgentsView(model: model, agents: unlinked, taskID: task.id)
                 }
                 if let notice = model.agentNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
@@ -107,6 +119,121 @@ private struct AgentLinkView: View {
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
         .contrastBorder(cornerRadius: 8)
+    }
+}
+
+/// An agent that reports itself: its label and folder, how FocusPilot
+/// knows (provenance), its state and last message, and the owner's actions.
+/// The message is the agent's own text: plain, never markup.
+private struct ReportedAgentView: View {
+    let model: AppModel
+    let agent: ReportedAgent
+    let reviewCount: Int
+    var showReviewQueue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: [agent.label, agent.folder.map { ($0 as NSString).abbreviatingWithTildeInPath }]
+                .compactMap(\.self).joined(separator: " · "))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            // Redrawn each minute, so Working turns Unknown without a report.
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                HStack(spacing: 6) {
+                    ReportedStateLabel(state: agent.state(at: context.date))
+                    Text(verbatim: "· \(agent.lastReportAt.formatted(.relative(presentation: .named, unitsStyle: .wide)))")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let message = agent.lastMessage {
+                Text(verbatim: message)
+                    .font(.callout)
+                    .lineLimit(3)
+            }
+            Text(verbatim: "Last report \(agent.source.provenance). Results go to Review queue; nothing opens until you choose to.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
+                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
+                if agent.terminal.app == "WarpTerminal", agent.folder != nil {
+                    Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
+                        .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
+                }
+                if reviewCount > 0 {
+                    Button("Review (\(reviewCount))", action: showReviewQueue)
+                }
+                Spacer()
+                Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
+                    .buttonStyle(.link)
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        .contrastBorder(cornerRadius: 8)
+    }
+}
+
+/// Reported agents no folder matched to a task, for the owner to link to
+/// this one. Agents in the same folder later follow that choice.
+private struct UnlinkedAgentsView: View {
+    let model: AppModel
+    let agents: [ReportedAgent]
+    let taskID: Int64
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Not linked to a task")
+                .font(.caption.weight(.semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+            ForEach(agents) { agent in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: agent.label)
+                            .font(.callout.weight(.medium))
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            ReportedStateLabel(state: agent.state(at: context.date))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let folder = agent.folder {
+                            Text(verbatim: (folder as NSString).abbreviatingWithTildeInPath)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    Spacer()
+                    Button("Link Here") { Task { await model.linkReportedAgent(agent.id, toTask: taskID) } }
+                        .help("Links this agent, and new agents in its folder, to this task.")
+                    Button("Remove", systemImage: "xmark") { Task { await model.forgetReportedAgent(agent.id) } }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("Forget this agent. It shows again if it reports.")
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
+/// "● Working", "● Needs you", "● Ready", "● Failed" or "○ Unknown".
+struct ReportedStateLabel: View {
+    let state: ReportedAgentState
+
+    var body: some View {
+        switch state {
+        case .working: StatusDot(title: state.title, role: .accent, filled: true)
+        case .needsYou: StatusDot(title: state.title, role: .blocked, filled: true)
+        case .ready: StatusDot(title: state.title, role: .ready, filled: true)
+        case .failed: StatusDot(title: state.title, role: .blocked, filled: false)
+        // Unknown is never shown as done.
+        case .unknown: StatusDot(title: state.title, role: .unknown, filled: false)
+        }
     }
 }
 
