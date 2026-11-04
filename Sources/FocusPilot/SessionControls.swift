@@ -97,9 +97,13 @@ struct SessionControls: View {
                     Button("\(minutes) minutes") { Task { await model.takeBreak(minutes: minutes) } }
                 }
             } label: {
-                Label("Take a Break", systemImage: "cup.and.saucer").frame(maxWidth: .infinity)
+                Label("Break", systemImage: "cup.and.saucer").frame(maxWidth: .infinity)
             }
-            .help("Stops the countdown for a short break")
+            // A short title fits beside +10 min and Complete; the menu says
+            // the rest.
+            .menuIndicator(.hidden)
+            .help("Take a break: stops the countdown")
+            .accessibilityLabel("Take a Break")
             .disabled(session.phase != .running)
         }
     }

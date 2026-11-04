@@ -148,18 +148,46 @@ struct PlanningView: View {
         } else if page == .settings {
             SettingsPage(model: model)
         } else {
-            // The current task first; the Quick timer stays at the bottom
-            // (owner request, 2026-11-03).
+            todayPage
+        }
+    }
+
+    /// Today (owner request, 2026-11-03): the current task across the top;
+    /// under it the rest of the list with the Quick timer at the bottom, and
+    /// the selected task's Agent column to the right of both.
+    @ViewBuilder private var todayPage: some View {
+        if model.today.isEmpty {
             VStack(spacing: 0) {
                 todayTasks
-                QuickTimerCard(model: model)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                quickTimer
+            }
+        } else {
+            VStack(spacing: 0) {
+                TimelineView(.everyMinute) { context in
+                    let now = TaskSections(model.today).now
+                    NowCard(item: now, caption: nil, showsProject: true, now: context.date)
+                        .contentShape(Rectangle())
+                        .onTapGesture { todaySelection = now?.id }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                VStack(spacing: 0) {
+                    todayTasks
+                    quickTimer
+                }
+                .taskInspector(model: model, items: model.today, selection: $todaySelection,
+                               showReviewQueue: { page = .review })
             }
         }
     }
 
-    /// Today's tasks, above the Quick timer card (D2).
+    private var quickTimer: some View {
+        QuickTimerCard(model: model)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+    }
+
+    /// Today's tasks under the Now card, above the Quick timer card (D2).
     @ViewBuilder private var todayTasks: some View {
         if model.today.isEmpty {
             ContentUnavailableView(
@@ -172,9 +200,7 @@ struct PlanningView: View {
                      move: { id, status, placement in Task { await model.move(id, to: status, placement) } },
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
-                     selection: $todaySelection)
-                .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                               showReviewQueue: { page = .review })
+                     selection: $todaySelection, showsNow: false)
         }
     }
 }
