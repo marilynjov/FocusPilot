@@ -486,3 +486,69 @@ struct RaccoonMoreTimeTests {
         #expect(RaccoonArtTests.manifest.pose(peek.poseID)?.name == "Tired")
     }
 }
+
+/// "<label> needs you" (owner, 2026-11-03): at once, in every session mode,
+/// with Go to agent; below time's up.
+@Suite("Raccoon moments: an agent needs you")
+struct RaccoonNeedsYouTests {
+    private let now = instant("2026-10-14T10:20:00-05:00")
+
+    private func need(_ id: Int64 = 3, label: String = "ablation", ago: TimeInterval = 5) -> RaccoonMoments.AgentNeed {
+        RaccoonMoments.AgentNeed(agentID: id, label: label, since: now.addingTimeInterval(-ago))
+    }
+
+    private func session(_ mode: SessionMode, _ phase: SessionPhase = .running, endsIn: TimeInterval = 1800) -> FocusSession {
+        FocusSession(id: UUID(), taskID: 7, action: "Write", mode: mode, startedAt: now.addingTimeInterval(-1800),
+                     plannedEnd: now.addingTimeInterval(endsIn), phase: phase)
+    }
+
+    private func next(session: FocusSession?, needs: [RaccoonMoments.AgentNeed], mode: RaccoonCompanionMode = .peeksForReminders,
+                      shown: [RaccoonMoment.ID: Date] = [:]) -> RaccoonMoment? {
+        RaccoonMoments.next(mode: mode, session: session, plan: nil, runs: [], blockedVisitAt: nil,
+                            agentsNeedingYou: needs, shown: shown, at: now, timeZone: bogota)
+    }
+
+    @Test func itPeeksWithTheLabelAndGoToAgent() throws {
+        let moment = try #require(next(session: nil, needs: [need()]))
+        #expect(moment.kind == .needsYou)
+        #expect(moment.agentID == 3)
+        #expect(moment.peek.message == "ablation needs you")
+        #expect(moment.peek.actions == [.goToAgent(3), .gotIt])
+        #expect(RaccoonPeekAction.goToAgent(3).title == "Go to agent")
+    }
+
+    @Test func itShowsInEveryModeStrictAndPausedIncluded() {
+        for session in [session(.normal), session(.strict), session(.strict, .paused(since: now)),
+                        session(.strict, .onBreak(until: now.addingTimeInterval(300)))] {
+            #expect(next(session: session, needs: [need()])?.kind == .needsYou)
+        }
+    }
+
+    @Test func itOutranksTheEndWarningButNotTimesUp() {
+        // Five minutes left: the end warning is due too.
+        #expect(next(session: session(.strict, endsIn: 300), needs: [need()])?.kind == .needsYou)
+        let ended = FocusSession(id: UUID(), taskID: 7, action: "Write", mode: .strict, startedAt: now.addingTimeInterval(-1800),
+                                 plannedEnd: now.addingTimeInterval(-10),
+                                 phase: .ended(at: now.addingTimeInterval(-10), reason: .reachedPlannedEnd))
+        #expect(next(session: ended, needs: [need()])?.kind == .timesUp)
+        #expect(RaccoonMoment.Kind.needsYou < .timesUp)
+        #expect(RaccoonMoment.Kind.needsYou > .finished)
+    }
+
+    @Test func eachReportShowsOnceAndTheLatestFirst() throws {
+        let older = need(1, label: "older", ago: 60)
+        let newer = need(2, label: "newer", ago: 5)
+        let first = try #require(next(session: nil, needs: [older, newer]))
+        #expect(first.agentID == 2)
+        let second = try #require(next(session: nil, needs: [older, newer], shown: [first.id: now]))
+        #expect(second.agentID == 1)
+        #expect(next(session: nil, needs: [older, newer], shown: [first.id: now, second.id: now]) == nil)
+        // A new report from the same agent is a new moment.
+        #expect(next(session: nil, needs: [need(2, ago: 1)], shown: [first.id: now]) != nil)
+    }
+
+    @Test func nothingInOffModeOrLongAfter() {
+        #expect(next(session: nil, needs: [need()], mode: .off) == nil)
+        #expect(next(session: nil, needs: [need(ago: 11 * 60)]) == nil)
+    }
+}
