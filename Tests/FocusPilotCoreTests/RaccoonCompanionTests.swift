@@ -157,6 +157,16 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: peek)?.poseID == "peek")
     }
 
+    @Test func inFrontThePeekHasAPlaceOnEveryPage() {
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: true, isTodayEmpty: false) == .nowCard)
+        // An empty Today has no Now card: the corner, not nowhere.
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: true, isTodayEmpty: true) == .corner)
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: false, isTodayEmpty: false) == .corner)
+        #expect(RaccoonPresence.windowSpot(isInFront: true, isToday: false, isTodayEmpty: true) == .corner)
+        // In another app the floating raccoon shows it.
+        #expect(RaccoonPresence.windowSpot(isInFront: false, isToday: true, isTodayEmpty: false) == nil)
+    }
+
     @Test func offShowsNothing() {
         #expect(RaccoonPresence.resolve(mode: .off, activity: .working, isWindowOpen: false, peek: RaccoonPeek(poseID: "peek")) == nil)
     }

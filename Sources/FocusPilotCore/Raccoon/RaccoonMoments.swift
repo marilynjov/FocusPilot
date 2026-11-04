@@ -6,7 +6,7 @@ public struct RaccoonMoment: Equatable, Sendable {
     /// Lowest priority first: when several are due the last one shows, and
     /// a peek on screen gives way only to a later kind.
     public enum Kind: Int, CaseIterable, Comparable, Hashable, Sendable {
-        case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, breakOver, breakStarted, breakEnding,
+        case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, moreTime, breakOver, breakStarted, breakEnding,
              finished,
              quickTimerUp, timesUp
 
@@ -98,17 +98,33 @@ public enum RaccoonMoments {
     static let timesUpPose = "playbow"
 
     /// After "+10 min" or "Keep going", the raccoon looks tired for a moment
-    /// before it goes back to work (owner request, 2026-11-02).
-    public static func moreTime(minutes: Int) -> RaccoonPeek {
-        RaccoonPeek(poseID: "lying", message: "\(minutes) more minutes. You’ve got this.")
+    /// before it goes back to work (owner request, 2026-11-02). A moment of
+    /// its own kind, so a less pressing one does not cut it short.
+    public static func moreTime(minutes: Int, at now: Date) -> RaccoonMoment {
+        RaccoonMoment(id: .init(.moreTime, String(now.timeIntervalSinceReferenceDate)),
+                      peek: RaccoonPeek(poseID: "lying", message: "\(minutes) more minutes. You’ve got this."),
+                      duration: moreTimeDuration)
     }
     public static let moreTimeDuration: TimeInterval = 10
+
+    /// How long before the end the session is warned, or nil when it is no
+    /// longer than that. The length is the one planned at the start plus
+    /// "+10 min", not `plannedEnd - startedAt`, which pauses and breaks the
+    /// owner takes move too: a 10-minute session keeps its 2-minute warning
+    /// after a 5-minute break.
+    static func warningThreshold(_ session: FocusSession, plannedLength: TimeInterval?,
+                                 extended: TimeInterval) -> TimeInterval? {
+        let length = (plannedLength ?? session.plannedEnd.timeIntervalSince(session.startedAt)) + extended
+        let threshold = length < shortSession ? shortWarning : warning
+        return length > threshold ? threshold : nil
+    }
 
     /// When the next time-based moment falls due after `now`: the end
     /// warning, a break coming up, or the next block coming up. The app
     /// looks again then, so a moment shows on time instead of up to a
     /// polling interval late. Nil when none is ahead.
-    public static func nextDue(session: FocusSession?, quickTimer: QuickTimer? = nil, plan: DayPlan?, runs: [PlanRun],
+    public static func nextDue(session: FocusSession?, plannedLength: TimeInterval? = nil, extended: TimeInterval = 0,
+                               quickTimer: QuickTimer? = nil, plan: DayPlan?, runs: [PlanRun],
                                at now: Date, timeZone: TimeZone) -> Date? {
         var times: [Date] = []
         if let quickTimer, quickTimer.isRunning {
@@ -118,9 +134,9 @@ public enum RaccoonMoments {
             times += [until.addingTimeInterval(-breakEndingNotice), until]
         }
         if let session, session.phase == .running {
-            let length = session.plannedEnd.timeIntervalSince(session.startedAt)
-            let threshold = length < shortSession ? shortWarning : warning
-            if length > threshold { times.append(session.plannedEnd.addingTimeInterval(-threshold)) }
+            if let threshold = warningThreshold(session, plannedLength: plannedLength, extended: extended) {
+                times.append(session.plannedEnd.addingTimeInterval(-threshold))
+            }
             if let plan, let (block, _) = plannedBlock(of: session, plan: plan, runs: runs, timeZone: timeZone) {
                 times += block.breaks.map { $0.start.addingTimeInterval(-breakNotice) }
                 times += block.breaks.map(\.start)
@@ -136,11 +152,13 @@ public enum RaccoonMoments {
     }
 
     /// The moment to show now, if any. `session` is the latest one, which
-    /// may have ended; `extended` is the time "+10 min" has added to it;
-    /// `endedBreak` is the last owner break that ran out; `quickTimer` is
+    /// may have ended; `plannedLength` is its length as planned at the start
+    /// (nil reads it from the session); `extended` is the time "+10 min"
+    /// has added to it; `endedBreak` is the last owner break that ran out; `quickTimer` is
     /// the quick timer still running, if any; `shown` maps each moment shown
     /// to when it was.
-    public static func next(mode: RaccoonCompanionMode, session: FocusSession?, extended: TimeInterval = 0,
+    public static func next(mode: RaccoonCompanionMode, session: FocusSession?, plannedLength: TimeInterval? = nil,
+                            extended: TimeInterval = 0,
                             endedBreak: EndedBreak? = nil, quickTimer: QuickTimer? = nil, plan: DayPlan?,
                             runs: [PlanRun], blockedVisitAt: Date?, shown: [RaccoonMoment.ID: Date], at now: Date,
                             timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
@@ -150,7 +168,8 @@ public enum RaccoonMoments {
             due.append(moment)
         }
         if let session {
-            due += sessionMoments(session, extended: extended, plan: plan, runs: runs, at: now, timeZone: timeZone)
+            due += sessionMoments(session, plannedLength: plannedLength, extended: extended, plan: plan, runs: runs,
+                                  at: now, timeZone: timeZone)
         }
         if let session, let moment = breakOver(endedBreak, session: session, at: now) {
             due.append(moment)
@@ -190,7 +209,8 @@ public enum RaccoonMoments {
 
     // MARK: Moments
 
-    private static func sessionMoments(_ session: FocusSession, extended: TimeInterval, plan: DayPlan?, runs: [PlanRun],
+    private static func sessionMoments(_ session: FocusSession, plannedLength: TimeInterval?, extended: TimeInterval,
+                                       plan: DayPlan?, runs: [PlanRun],
                                        at now: Date, timeZone: TimeZone) -> [RaccoonMoment] {
         let id = session.id.uuidString
         switch session.phase {
@@ -238,10 +258,9 @@ public enum RaccoonMoments {
             return moments
         case .running:
             var moments: [RaccoonMoment] = []
-            let length = session.plannedEnd.timeIntervalSince(session.startedAt)
-            let threshold = length < shortSession ? shortWarning : warning
             let remaining = session.remaining(at: now)
-            if length > threshold, remaining <= threshold, remaining > warningTooLate {
+            if let threshold = warningThreshold(session, plannedLength: plannedLength, extended: extended),
+               remaining <= threshold, remaining > warningTooLate {
                 let peek = RaccoonPeek(poseID: "peek", message: "\(minutes(remaining)) left",
                                        actions: [.gotIt, .extend(minutes: extraMinutes),
                                                  .takeBreak(minutes: warningBreakMinutes)])

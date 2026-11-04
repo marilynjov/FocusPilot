@@ -287,6 +287,19 @@ public struct RaccoonPresence: Equatable, Sendable {
         }
     }
 
+    /// Where the planning window draws its raccoon while in front: in the
+    /// Now card on Today, which shows it whenever Today has tasks, else in
+    /// the window's corner, so a peek is never left with nowhere to show.
+    public enum WindowSpot: Equatable, Sendable {
+        case nowCard, corner
+    }
+
+    /// Nil while the window is not in front: the floating raccoon shows.
+    public static func windowSpot(isInFront: Bool, isToday: Bool, isTodayEmpty: Bool) -> WindowSpot? {
+        guard isInFront else { return nil }
+        return isToday && !isTodayEmpty ? .nowCard : .corner
+    }
+
     /// The planning window while it is in front: a peek, with its bubble,
     /// in On screen and Peeks-in modes, else in On screen mode the task's
     /// pose while a session is under way. The floating window then shows

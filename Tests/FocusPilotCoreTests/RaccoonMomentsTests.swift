@@ -47,11 +47,11 @@ struct RaccoonMomentsTests {
     }
 
     private func next(_ mode: RaccoonCompanionMode = .staysOnScreen, session: FocusSession? = nil,
-                      extended: TimeInterval = 0, endedBreak: RaccoonMoments.EndedBreak? = nil,
+                      plannedLength: TimeInterval? = nil, extended: TimeInterval = 0, endedBreak: RaccoonMoments.EndedBreak? = nil,
                       quickTimer: QuickTimer? = nil, plan: DayPlan? = nil, runs: [PlanRun] = [],
                       blockedVisitAt: Date? = nil, shown: [RaccoonMoment.ID: Date] = [:],
                       at time: String) -> RaccoonMoment? {
-        RaccoonMoments.next(mode: mode, session: session, extended: extended, endedBreak: endedBreak,
+        RaccoonMoments.next(mode: mode, session: session, plannedLength: plannedLength, extended: extended, endedBreak: endedBreak,
                             quickTimer: quickTimer, plan: plan, runs: runs,
                             blockedVisitAt: blockedVisitAt, shown: shown, at: at(time), timeZone: bogota,
                             locale: britishEnglish)
@@ -158,6 +158,51 @@ struct RaccoonMomentsTests {
         // left once resumed, and nothing new to say.
         let resumed = session(from: "10:00", to: "11:05")
         #expect(next(session: resumed, shown: shown, at: "10:57") == nil)
+    }
+
+    @Test func anOwnerBreakDoesNotChangeWhichWarningASessionGets() throws {
+        // A 10-minute session took a 5-minute break from 10:03 to 10:08,
+        // which moved its end to 10:15.
+        let resumed = session(from: "10:00", to: "10:15")
+        let planned: TimeInterval = 10 * 60
+
+        #expect(next(session: resumed, plannedLength: planned, at: "10:08") == nil)
+        #expect(next(session: resumed, plannedLength: planned, at: "10:12") == nil)
+        let moment = try #require(next(session: resumed, plannedLength: planned, at: "10:13"))
+        #expect(moment.peek.message == "2 minutes left")
+        #expect(RaccoonMoments.nextDue(session: resumed, plannedLength: planned, plan: nil, runs: [], at: at("10:08"),
+                                       timeZone: bogota) == at("10:13"))
+        // Read from the session alone it would have looked 15 minutes long.
+        #expect(next(session: resumed, at: "10:08")?.peek.message == "7 minutes left")
+        // "+10 min" does make it longer: 20 minutes gets the 10-minute warning.
+        let extended = session(from: "10:00", to: "10:25")
+        #expect(next(session: extended, plannedLength: planned, extended: 600, at: "10:15")?.peek.message
+            == "10 minutes left")
+    }
+
+    @Test func theTiredRaccoonIsAMomentAboveTheLowPriorityOnes() {
+        let tired = RaccoonMoments.moreTime(minutes: 10, at: at("10:00"))
+        #expect(tired.peek == RaccoonPeek(poseID: "lying", message: "10 more minutes. You’ve got this."))
+        #expect(tired.duration == 10)
+        #expect(tired.sessionID == nil)
+        #expect(tired.kind > .blockedVisit && tired.kind > .nextBlock && tired.kind > .endWarning)
+        #expect(tired.kind < .timesUp)
+    }
+
+    @Test func nextDueCoversABlocksBreaksAndTheNextBlock() {
+        let running = session(from: "10:30", to: "11:30")
+        let runs = [run(1, from: "10:30")]
+        // The break at 11:00: its notice at 10:58, then its start.
+        #expect(RaccoonMoments.nextDue(session: running, plan: day, runs: runs, at: at("10:40"), timeZone: bogota)
+            == at("10:58"))
+        #expect(RaccoonMoments.nextDue(session: running, plan: day, runs: runs, at: at("10:58"), timeZone: bogota)
+            == at("11:00"))
+        // Between blocks, 10 minutes before the next one.
+        let ended = session(from: "10:30", to: "11:30", .ended(at: at("11:30"), reason: .reachedPlannedEnd))
+        #expect(RaccoonMoments.nextDue(session: ended, plan: day, runs: runs, at: at("11:40"), timeZone: bogota)
+            == at("12:20"))
+        #expect(RaccoonMoments.nextDue(session: nil, plan: plan(day.blocks, state: .draft), runs: [], at: at("10:00"),
+                                       timeZone: bogota) == nil)
     }
 
     // MARK: Time's up
@@ -480,7 +525,7 @@ struct RaccoonMomentsDueTests {
 @Suite("Raccoon moments: more time")
 struct RaccoonMoreTimeTests {
     @Test func askingForMoreTimeShowsTheTiredRaccoon() {
-        let peek = RaccoonMoments.moreTime(minutes: 10)
+        let peek = RaccoonMoments.moreTime(minutes: 10, at: .now).peek
         #expect(peek.poseID == "lying")
         #expect(peek.message == "10 more minutes. You’ve got this.")
         #expect(RaccoonArtTests.manifest.pose(peek.poseID)?.name == "Tired")
