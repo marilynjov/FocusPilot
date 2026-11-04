@@ -38,27 +38,66 @@ final class FocusPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        let host = NSHostingView(rootView: FocusPanelView(model: model).paletteTheme(model.displayPreferences))
+        var fit: () -> Void = {}
+        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }).paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
-        if !panel.setFrameUsingName("FocusPanel"), let screen = NSScreen.main?.visibleFrame {
+        if panel.setFrameUsingName("FocusPanel") {
+            // Keep only the saved place: a saved size can be too small for
+            // the time and task now shown, which cut the pill off.
+            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            panel.setContentSize(host.fittingSize)
+            panel.setFrameTopLeftPoint(top)
+        } else if let screen = NSScreen.main?.visibleFrame {
+            panel.setContentSize(host.fittingSize)
             panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
+        Self.keepOnScreen(panel)
         panel.setFrameAutosaveName("FocusPanel")
+        // Collapsing to the pill and expanding again size the panel to fit.
+        // A panel in the right half of its screen keeps its top-right corner,
+        // so the pill stays near the edge; otherwise the top-left corner.
+        fit = { [weak panel, weak host] in
+            guard let panel, let host else { return }
+            let frame = panel.frame
+            let anchorsRight = Self.screen(for: panel).map { frame.midX > $0.visibleFrame.midX } ?? false
+            panel.setContentSize(host.fittingSize)
+            let x = anchorsRight ? frame.maxX - panel.frame.width : frame.minX
+            panel.setFrameTopLeftPoint(NSPoint(x: x, y: frame.maxY))
+            Self.keepOnScreen(panel)
+        }
         panel.orderFrontRegardless()
         self.panel = panel
+    }
+
+    /// The screen the panel is on, else the main screen.
+    private static func screen(for panel: NSPanel) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.intersects(panel.frame) } ?? NSScreen.main
+    }
+
+    /// Keeps the panel whole on a connected screen, e.g. after a display was
+    /// removed, or after the pill was left near an edge and then expanded.
+    private static func keepOnScreen(_ panel: NSPanel) {
+        guard let visible = screen(for: panel)?.visibleFrame else { return }
+        var frame = panel.frame
+        frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        panel.setFrame(frame, display: true)
     }
 }
 
 /// The panel's content: expanded with Pause and Complete, or a collapsed pill.
 struct FocusPanelView: View {
     let model: AppModel
+    /// Asks the panel to fit the new size after collapsing or expanding.
+    var onResize: () -> Void = {}
     @State private var isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
 
-    init(model: AppModel, isCollapsed: Bool = false) {
+    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}) {
         self.model = model
+        self.onResize = onResize
         _isCollapsed = State(initialValue: isCollapsed)
     }
 
@@ -69,6 +108,7 @@ struct FocusPanelView: View {
             }
         }
         .fixedSize()
+        .onChange(of: isCollapsed) { DispatchQueue.main.async { onResize() } }
     }
 
     private func expanded(_ session: FocusSession) -> some View {
@@ -114,6 +154,8 @@ struct FocusPanelView: View {
                 Text(reduceMotion ? text.minutesLeft(at: model.now) : text.timeLeft(at: model.now))
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
                 Text(session.action)
                     .font(.callout)
                     .foregroundStyle(.secondary)
