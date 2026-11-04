@@ -7,10 +7,18 @@ import SwiftUI
 /// It is a non-activating panel: clicking it never takes keyboard focus from
 /// the app the owner is typing in. It opens small in the top-right corner,
 /// can be dragged anywhere (the place is remembered) and collapses to a pill.
+/// While the raccoon floats on screen it stands in for the panel, which then
+/// opens only from a click on the raccoon (owner request, 2026-11-02).
 @MainActor
 final class FocusPanelController {
     private unowned let model: AppModel
     private var panel: NSPanel?
+    /// Opened from a click on the floating raccoon; closed by another click,
+    /// or when the raccoon leaves the screen.
+    private var isOpenedFromRaccoon = false
+    /// Whether the panel on screen was built to open from the raccoon, so a
+    /// mode change rebuilds it with the right corner button.
+    private var panelIsFromRaccoon = false
 
     init(model: AppModel) {
         self.model = model
@@ -18,13 +26,45 @@ final class FocusPanelController {
 
     /// Shows the panel while a session is active and the owner wants it.
     func update() {
-        let wanted = model.snapshot.activeSession != nil && model.menuBarPreferences.showsFocusPanel
-        if wanted, panel == nil {
+        let standsIn = model.raccoon.standsInForFocusPanel
+        if !standsIn || !model.raccoon.isOnScreen || model.snapshot.activeSession == nil { isOpenedFromRaccoon = false }
+        let wanted = model.snapshot.activeSession != nil
+            && (standsIn ? isOpenedFromRaccoon : model.menuBarPreferences.showsFocusPanel)
+        if wanted, let panel, panelIsFromRaccoon != isOpenedFromRaccoon {
+            panel.orderOut(nil)
+            self.panel = nil
+            show()
+        } else if wanted, panel == nil {
             show()
         } else if !wanted, let panel {
             panel.orderOut(nil)
             self.panel = nil
         }
+    }
+
+    private func closeFromRaccoon() {
+        isOpenedFromRaccoon = false
+        update()
+    }
+
+    /// Opens the panel just above the raccoon at `raccoonFrame`, or closes it.
+    func toggleFromRaccoon(above raccoonFrame: NSRect) {
+        isOpenedFromRaccoon.toggle()
+        update()
+        moveAboveRaccoon(raccoonFrame)
+    }
+
+    /// Keeps a panel opened from the raccoon just above it when the raccoon
+    /// moves.
+    func moveAboveRaccoon(_ raccoonFrame: NSRect) {
+        guard isOpenedFromRaccoon, panelIsFromRaccoon, let panel else { return }
+        var frame = panel.frame
+        frame.origin = NSPoint(x: raccoonFrame.maxX - frame.width, y: raccoonFrame.maxY + 4)
+        if let visible = (NSScreen.screens.first { $0.frame.intersects(raccoonFrame) } ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        }
+        panel.setFrame(frame, display: true)
     }
 
     private func show() {
@@ -39,21 +79,31 @@ final class FocusPanelController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         var fit: () -> Void = {}
-        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }).paletteTheme(model.displayPreferences))
+        // Opened from the raccoon, the corner button closes the panel; the
+        // raccoon already plays the pill's part.
+        let close: (() -> Void)? = isOpenedFromRaccoon ? { [weak self] in self?.closeFromRaccoon() } : nil
+        let host = NSHostingView(rootView: FocusPanelView(model: model, onResize: { fit() }, onClose: close)
+            .paletteTheme(model.displayPreferences))
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
-        if panel.setFrameUsingName("FocusPanel") {
-            // Keep only the saved place: a saved size can be too small for
-            // the time and task now shown, which cut the pill off.
-            let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        // Only the owner's own panel remembers its place; one opened from the
+        // raccoon is placed above it and must not overwrite that place.
+        if !isOpenedFromRaccoon {
+            if panel.setFrameUsingName("FocusPanel") {
+                // Keep only the saved place: a saved size can be too small for
+                // the time and task now shown, which cut the pill off.
+                let top = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+                panel.setContentSize(host.fittingSize)
+                panel.setFrameTopLeftPoint(top)
+            } else if let screen = NSScreen.main?.visibleFrame {
+                panel.setContentSize(host.fittingSize)
+                panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
+            }
+            Self.keepOnScreen(panel)
+            panel.setFrameAutosaveName("FocusPanel")
+        } else {
             panel.setContentSize(host.fittingSize)
-            panel.setFrameTopLeftPoint(top)
-        } else if let screen = NSScreen.main?.visibleFrame {
-            panel.setContentSize(host.fittingSize)
-            panel.setFrameTopLeftPoint(NSPoint(x: screen.maxX - 336, y: screen.maxY - 16))
         }
-        Self.keepOnScreen(panel)
-        panel.setFrameAutosaveName("FocusPanel")
         // Collapsing to the pill and expanding again size the panel to fit.
         // A panel in the right half of its screen keeps its top-right corner,
         // so the pill stays near the edge; otherwise the top-left corner.
@@ -68,6 +118,7 @@ final class FocusPanelController {
         }
         panel.orderFrontRegardless()
         self.panel = panel
+        panelIsFromRaccoon = isOpenedFromRaccoon
     }
 
     /// The screen the panel is on, else the main screen.
@@ -91,13 +142,16 @@ struct FocusPanelView: View {
     let model: AppModel
     /// Asks the panel to fit the new size after collapsing or expanding.
     var onResize: () -> Void = {}
+    /// When set, the corner button closes the panel instead of collapsing it.
+    var onClose: (() -> Void)?
     @State private var isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.palette) private var palette
 
-    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}) {
+    init(model: AppModel, isCollapsed: Bool = false, onResize: @escaping () -> Void = {}, onClose: (() -> Void)? = nil) {
         self.model = model
         self.onResize = onResize
+        self.onClose = onClose
         _isCollapsed = State(initialValue: isCollapsed)
     }
 
@@ -116,12 +170,12 @@ struct FocusPanelView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
                     SessionHeader(session: session, now: model.now, timeFont: .title3.weight(.semibold))
-                    Button { isCollapsed = true } label: {
-                        Image(systemName: "chevron.down")
+                    Button { if let onClose { onClose() } else { isCollapsed = true } } label: {
+                        Image(systemName: onClose == nil ? "chevron.down" : "xmark")
                     }
                     .buttonStyle(.borderless)
-                    .help("Collapse")
-                    .accessibilityLabel("Collapse")
+                    .help(onClose == nil ? "Collapse" : "Close")
+                    .accessibilityLabel(onClose == nil ? "Collapse" : "Close")
                 }
                 Text(session.action)
                     .font(.headline)

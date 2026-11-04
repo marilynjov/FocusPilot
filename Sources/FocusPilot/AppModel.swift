@@ -41,6 +41,36 @@ final class AppModel {
     var ruleEditToConfirm: RuleEdit?
     /// Asks the planning window to show a page, e.g. Settings from ⌘,.
     var requestedPage: PlanningView.Page?
+    /// Whether the planning window is open (shown, not closed).
+    var isPlanningWindowOpen = false {
+        didSet { refreshRaccoonWindowState() }
+    }
+    /// Whether FocusPilot is in front and its planning window is not
+    /// minimized; see `refreshRaccoonWindowState`.
+    private(set) var isPlanningWindowInFront = false {
+        didSet { if isPlanningWindowInFront != oldValue { raccoon.update() } }
+    }
+    /// The reminder the raccoon is peeking in with (D12), if any.
+    var raccoonPeek: RaccoonPeek?
+    /// The raccoon shows in the planning window while the owner is looking
+    /// at it, and on screen otherwise (owner request, 2026-11-02).
+    var raccoonIsInWindow: Bool { isPlanningWindowOpen && isPlanningWindowInFront }
+
+    /// Reads the app and window state directly, so a missed notification
+    /// cannot leave it stale.
+    func refreshRaccoonWindowState() {
+        isPlanningWindowInFront = NSApplication.shared.isActive && planningWindow != nil
+        raccoon.update()
+        raccoon.placePanel()
+    }
+
+    /// The planning window while it is open and not minimized.
+    var planningWindow: NSWindow? {
+        guard isPlanningWindowOpen else { return nil }
+        return NSApplication.shared.windows.first {
+            $0.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true && $0.isVisible && !$0.isMiniaturized
+        }
+    }
     /// Why the last exception request was refused.
     var exceptionError: String?
     /// The wrap-up waiting for the owner; see `AppModel+WrapUp.swift`.
@@ -78,6 +108,8 @@ final class AppModel {
     /// Pending reconcile at the quick timer's next notice.
     @ObservationIgnored var quickTimerTask: Task<Void, Never>?
     @ObservationIgnored lazy var focusPanel = FocusPanelController(model: self)
+    /// The raccoon companion window (D11); see `RaccoonCompanion.swift`.
+    @ObservationIgnored lazy var raccoon = RaccoonCompanionController(model: self)
     @ObservationIgnored lazy var appBlocker = AppBlocker(model: self)
     let loginItem = LoginItemSettings(service: MainAppLoginItem())
     let menuBarPreferences = MenuBarPreferences()
@@ -107,6 +139,12 @@ final class AppModel {
         }
         displayPreferences.applyAppearance()
         displayPreferences.appearanceDidChange = { [weak self] _ in self?.displayPreferences.applyAppearance() }
+        displayPreferences.raccoonModeDidChange = { [weak self] _ in
+            self?.raccoon.update()
+            self?.focusPanel.update()
+        }
+        displayPreferences.raccoonScreenDidChange = { [weak self] in self?.raccoon.placePanel() }
+        refreshRaccoonWindowState()
         refreshLoginItem(on: NSMenu.didBeginTrackingNotification)
         refreshLoginItem(on: NSApplication.didBecomeActiveNotification)
         tickWhileTimeIsShown()

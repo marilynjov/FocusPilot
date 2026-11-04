@@ -43,6 +43,7 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
+                .overlay(alignment: .bottomTrailing) { RaccoonWindowView(model: model) }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
@@ -73,8 +74,16 @@ struct PlanningView: View {
         // LSUIElement keeps the app out of the Dock, but while the planning
         // window is open the owner should be able to find it there and with
         // Command-Tab like any other window.
-        .onAppear { NSApplication.shared.setActivationPolicy(.regular) }
-        .onDisappear { NSApplication.shared.setActivationPolicy(.accessory) }
+        // The raccoon follows: here while the window is open, on screen
+        // while it is closed.
+        .onAppear {
+            NSApplication.shared.setActivationPolicy(.regular)
+            model.isPlanningWindowOpen = true
+        }
+        .onDisappear {
+            NSApplication.shared.setActivationPolicy(.accessory)
+            model.isPlanningWindowOpen = false
+        }
     }
 
     /// One sheet modifier, so a wrap-up and Start focus wanted at once show
