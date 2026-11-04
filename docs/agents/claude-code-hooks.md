@@ -6,8 +6,9 @@ FocusPilot only listens. It never answers Claude, approves anything, sends a pro
 
 ## Before you start
 
-1. In FocusPilot, open **Settings › General** and turn on **Agent monitoring**. It is off by default. While it is off, FocusPilot refuses every report, and the hook shows "agent monitoring is off".
-2. The hooks call the `focuspilot` command, which ships inside the app. **Settings › General › Claude Code hooks** shows the hooks block with the full path to the command already filled in. Its **Copy** button is the easiest way to get it. To use the plain block below instead, put the command on your PATH once:
+1. In FocusPilot, open **Settings › General** and turn on **Agent monitoring**. It is off by default. While it is off, FocusPilot refuses every report. The hook's error says "agent monitoring is off", but Claude Code hides errors from async hooks unless you open the transcript with Ctrl+O or run `claude --verbose`.
+2. In the same tab, set **Raccoon** to **On screen while a task runs** or **Peeks in for reminders only**. It is Off by default, and while it is off the raccoon never peeks, "needs you" included. The notification still arrives.
+3. The hooks call the `focuspilot` command, which ships inside the app. **Settings › General › Claude Code hooks** shows the hooks block with the full path to the command already filled in. Its **Copy** button is the easiest way to get it. To use the plain block below instead, put the command on your PATH once:
 
    ```sh
    ln -s ~/Applications/FocusPilot.app/Contents/Helpers/focuspilot ~/.local/bin/focuspilot
@@ -42,14 +43,14 @@ The command reads the JSON that Claude Code sends to the hook on stdin, so `jq` 
 
 | Claude Code event | FocusPilot shows | Message kept |
 |---|---|---|
-| `SessionStart` (a new, resumed, cleared or compacted session) | Working | none |
+| `SessionStart` (its source is `startup`, `resume`, `clear`, `compact` or `fork`) | Working | none |
 | `UserPromptSubmit` (you sent a prompt) | Working | none; your prompt is never stored |
 | `Notification` of type `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog`, `agent_needs_input` or `quota_auto_resume_stale` | **Needs you**: the raccoon peeks at once with **Go to agent** and plays the soft sound, and a notification arrives. This happens during focus blocks too, strict sessions included. | Claude's notification text |
 | Other `Notification` types, such as `idle_prompt` (sent a minute after a finished turn) | nothing | |
 | `Stop` (Claude finished responding) | Ready, and the result goes to the Review queue. While a day plan block is running, it waits there until the next break. | `last_assistant_message`, up to 2,000 characters |
 | `Stop` while background tasks are still running | Working ("Waiting for 1 background task") | |
 
-The agent's label is the session's title if it has one, otherwise "Claude Code · <folder name>". To name it yourself, add `--name <label>` to the commands.
+The agent's label is the session's title if it has one, otherwise "Claude Code · <folder name>". Claude Code sends the title only with `SessionStart` and `UserPromptSubmit`, so a label made from the folder never replaces a title the session already gave. To name it yourself, add `--name <label>` to the commands.
 
 An agent that has said nothing for 30 minutes while working, or for 2 hours while waiting for you, shows as **Unknown**. Unknown is never shown as done.
 
@@ -57,26 +58,30 @@ An agent that has said nothing for 30 minutes while working, or for 2 hours whil
 
 FocusPilot links an agent to a task when it first hears from it. It does this only when a folder says which task:
 
-- If you linked an earlier agent in the same folder, or a parent folder, to a task by hand, the new agent follows that link.
+- If you linked an earlier agent in the same folder to a task by hand, the new agent follows that link. This works for that exact folder only, not the folders inside it. A link made in your home folder, or a folder above it, is never followed.
 - If the folder is inside a project's Herdr workspace folder, and that project's task is Now, the agent is linked to the Now task.
 
 The closest folder wins. Otherwise the agent appears under **Not linked to a task** in any task's Agent panel. Use **Link Here** to link it. A result from an agent with no task stays on the agent and does not go to the Review queue.
 
 ## Try it in Warp
 
-1. Turn on **Agent monitoring** and copy the hooks block from **Settings › General**, as above. Paste it into `~/.claude/settings.json` and save the file.
+1. Turn on **Agent monitoring**, set the **Raccoon** to **On screen while a task runs** or **Peeks in for reminders only**, and copy the hooks block from **Settings › General**, as above. Paste it into `~/.claude/settings.json` and save the file.
 2. In Warp, `cd` into a project folder and run `claude`. Hooks are read when a session starts, so start a new one.
 3. In FocusPilot, select a task and look at its **Agent** panel. "Claude Code · <folder>" appears under **Not linked to a task**, marked Working. Click **Link Here**.
 4. Ask Claude to do something that needs your permission, such as running a shell command, and look away from Warp for about six seconds. Claude Code waits that long before it sends a permission notification. The raccoon peeks in: "Claude Code · <folder> needs you". Its **Go to agent** button brings Warp to the front. A notification arrives too, and clicking it does the same.
 5. Approve the request in Warp and let Claude finish. The Agent panel shows Ready with Claude's last message, and the result is in the Review queue.
-6. Turn **Agent monitoring** off and send another prompt. Claude Code shows a hook error saying that agent monitoring is off. Nothing is recorded, and Claude carries on as usual.
+6. Turn **Agent monitoring** off and send another prompt. Nothing is recorded, and Claude carries on as usual. The hook's error saying that agent monitoring is off is hidden by default. Press Ctrl+O to see it in the transcript, or start Claude with `claude --verbose`.
 
 **What Go to agent can do in Warp:** it brings Warp to the front, but not the agent's own tab. Warp documents no way for another app to pick an existing tab (see Sources below). When Warp is the terminal, the Agent panel also has **New Warp Tab Here**. That button opens a new tab in the agent's folder through Warp's documented URL. It is a new tab, not the agent's own. In Terminal and iTerm2, Go to agent selects the agent's exact tab by its terminal device. The first time, macOS asks whether FocusPilot may control that app (Automation). If you decline, Go to agent still brings the app to the front.
 
 ## Known limits
 
 - After you approve a permission request, the agent still shows **Needs you** until Claude finishes its turn, because no hook reports that the approval happened.
-- Reports are not queued while FocusPilot is closed. The hook fails quietly, with a hook error, and the next report after FocusPilot opens brings the agent up to date.
+- Reports are not queued while FocusPilot is closed. The hook fails quietly, and the next report after FocusPilot opens brings the agent up to date.
+- Errors from async hooks, such as "agent monitoring is off" or "FocusPilot is not running", are hidden by default. Press Ctrl+O, or run `claude --verbose`, to see them.
+- Async hooks can arrive out of order. Each report carries the time its command started, and FocusPilot ignores a state older than the one it has. A finished turn that arrives late still goes to the Review queue.
+- With `claude -p` (non-interactive), Claude Code stops async hooks that are still running when it exits, so the last Stop report can be lost.
+- `/clear` starts a new session with a new session ID, so it appears as a new agent. The old one goes Unknown after 30 minutes.
 - Hooks run with `"async": true`, so Claude never waits for FocusPilot. FocusPilot's hook commands never print to stdout and never exit with status 2. On `Stop`, status 2 would keep Claude from stopping.
 - The terminal app comes from `TERM_PROGRAM` and the tab from the process's controlling terminal. Claude Code's documentation says hooks inherit its environment. Neither value is named there, so both were checked in practice: `TERM_PROGRAM=WarpTerminal` was seen in a Warp shell. Whether they reach a hook in your setup is one of the things to confirm in the try-it steps.
 

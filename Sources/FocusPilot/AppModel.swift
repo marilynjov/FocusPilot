@@ -32,6 +32,9 @@ final class AppModel {
     /// Agents that reported they need the owner, for the raccoon; kept
     /// until they report something else or are gone.
     @ObservationIgnored var agentsNeedingYou: [RaccoonMoments.AgentNeed] = []
+    /// When the last break of a session ended: held results from before it
+    /// were shown during the break and stay shown (`ReviewHold`).
+    var reviewReleasedAt: Date?
     /// Turns a needs-you notification click into Go to agent.
     @ObservationIgnored let notificationClicks = NotificationClicks()
     /// Why the last Open agent did nothing, shown where it was clicked.
@@ -288,6 +291,7 @@ final class AppModel {
         guard latest.revision >= snapshot.revision else { return }
         noticeWrapUp(from: snapshot.session, to: latest.session)
         noteRaccoonBreakEnd(from: snapshot.session, to: latest.session)
+        noteReviewRelease(from: snapshot.session, to: latest.session)
         if let sound = TimeUpSound.due(from: snapshot, to: latest, at: .now) { playTimeUpSound(sound) }
         if let session = latest.activeSession, raccoonStartLengths[session.id] == nil {
             raccoonStartLengths[session.id] = session.plannedEnd.timeIntervalSince(session.startedAt)
@@ -316,6 +320,7 @@ final class AppModel {
             allReviewItems = try await coordinator.reviewQueue()
             reportedAgents = try await coordinator.reportedAgents()
             isAgentMonitoringOn = try await coordinator.isAgentMonitoringOn()
+            pruneAgentsNeedingYou()
             taskError = nil
         } catch {
             taskError = "Could not load tasks: \(error.localizedDescription)"

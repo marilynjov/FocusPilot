@@ -35,7 +35,7 @@ These commands let any command-line agent or script tell FocusPilot what it is d
 | --- | --- |
 | `focuspilot agent report <working\|needs-input\|done\|failed> --name <label> [--folder <path>] [--summary <text>] [--task <id>] [--terminal <app>] [--tty <device>] [--session <id>]` | Records the agent's state. The folder defaults to the current one. The terminal defaults to `TERM_PROGRAM` and the controlling terminal. `--session` identifies the agent across reports; without it, the label and folder do. `needs-input` makes the raccoon peek at once. |
 | `focuspilot agent report --from-claude-hook <event> [--name <label>]` | For Claude Code hooks. Reads the hook's JSON on stdin and never prints to stdout or exits 2. See [Claude Code hooks](agents/claude-code-hooks.md). |
-| `focuspilot run [--task <id>] [--name <label>] -- <command> [args...]` | Reports Working, runs the command in this terminal, then reports Ready or Failed by its exit status, which it returns. If the first report is refused, the command is not run. |
+| `focuspilot run [--task <id>] [--name <label>] -- <command> [args...]` | Reports Working, runs the command in this terminal, then reports Ready or Failed by its exit status, which it returns. If a signal stopped the command, `run` stops itself with the same signal. If the first report is refused, the command is not run. `run` sends no reports while the command runs, so a command that takes over 30 minutes shows Unknown until it ends. |
 
 Everything an agent sends is treated as untrusted:
 
@@ -43,7 +43,8 @@ Everything an agent sends is treated as untrusted:
 - Control and invisible formatting characters are removed.
 - A folder must be an absolute path, and a terminal device must look like `/dev/ttys003`. Values that don't fit are dropped with a note.
 - Nothing is executed or shown as markup.
-- Each agent can report at most 20 times a minute.
+- Each agent can report at most 20 times a minute, all agents together 60 times, and at most 10 new agents can start reporting in a minute.
+- Each report carries the time the command started; one older than the agent's last report does not change its state.
 - Reports are not queued while FocusPilot is closed.
 
 ## Where tasks go

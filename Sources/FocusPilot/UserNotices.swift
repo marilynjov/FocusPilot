@@ -50,6 +50,15 @@ extension UserNotices {
         content.title = "\(label) needs you"
         content.body = message ?? "It’s waiting for your answer."
         content.userInfo = [reportedAgentKey: agentID]
-        try? await center.add(UNNotificationRequest(identifier: "needs-you-\(agentID)", content: content, trigger: nil))
+        try? await center.add(UNNotificationRequest(identifier: needsYouID(agentID), content: content, trigger: nil))
     }
+
+    /// Takes back the agents' needs-you notifications once they report
+    /// something else, are forgotten, or monitoring is turned off.
+    static func removeNeedsYou(agentIDs: [Int64]) {
+        guard Bundle.main.bundleIdentifier != nil, !agentIDs.isEmpty else { return }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: agentIDs.map(needsYouID))
+    }
+
+    private static func needsYouID(_ agentID: Int64) -> String { "needs-you-\(agentID)" }
 }

@@ -36,13 +36,13 @@ final class AgentCommandTests {
         self.server = server
     }
 
-    private func run(_ arguments: [String], stdin: String = "", childStatus: Int32? = 0,
+    private func run(_ arguments: [String], stdin: String = "", child: ChildExit? = .exited(0),
                      environment: [String: String] = ["TERM_PROGRAM": "WarpTerminal"]) async -> FocusPilotCommand.Outcome {
         let children = children
         let system = AgentCommandSystem(standardInput: { Data(stdin.utf8) }, controllingTerminal: { "/dev/ttys004" },
                                         currentDirectory: { "/Users/owner/thesis" },
-                                        runChild: { command in children.commands.withLock { $0.append(command) }; return childStatus },
-                                        newRunID: { "run-1" })
+                                        runChild: { command in children.commands.withLock { $0.append(command) }; return child },
+                                        newRunID: { "run-1" }, clock: { wednesdayMorningInBogota })
         let command = FocusPilotCommand(location: location, environment: environment, now: wednesdayMorningInBogota,
                                         timeZone: bogota, system: system)
         return await withCheckedContinuation { continuation in
@@ -162,7 +162,7 @@ final class AgentCommandTests {
     @Test func runReportsWorkingThenTheExitStatus() async throws {
         try await startApp()
         let id = try await repository.addTask(NewTask(title: "Re-run ablation")).id!
-        let outcome = await run(["run", "--task", String(id), "--", "codex", "exec", "fix it"], childStatus: 3)
+        let outcome = await run(["run", "--task", String(id), "--", "codex", "exec", "fix it"], child: .exited(3))
 
         #expect(outcome.status == 3)
         #expect(children.commands.withLock { $0 } == [["codex", "exec", "fix it"]])
@@ -177,7 +177,7 @@ final class AgentCommandTests {
 
     @Test func aSuccessfulRunIsReady() async throws {
         try await startApp()
-        let outcome = await run(["run", "--name", "tests", "--", "swift", "test"], childStatus: 0)
+        let outcome = await run(["run", "--name", "tests", "--", "swift", "test"], child: .exited(0))
         #expect(outcome.status == 0)
         let agent = try #require(try await repository.reportedAgents().first)
         #expect(agent.label == "tests")
@@ -186,8 +186,18 @@ final class AgentCommandTests {
 
     @Test func aRunStoppedBySignalSaysSo() async throws {
         try await startApp()
-        #expect(await run(["run", "--", "sleep", "100"], childStatus: 130).status == 130)
+        let outcome = await run(["run", "--", "sleep", "100"], child: .signaled(SIGINT))
+        #expect(outcome.status == 130)
+        #expect(outcome.raisesSignal == SIGINT)
         #expect(try await repository.reportedAgents().first?.lastMessage == "Stopped by signal 2.")
+    }
+
+    @Test func aLostChildIsAnErrorNotAStatus() async throws {
+        try await startApp()
+        let outcome = await run(["run", "--", "x"], child: .waitFailed(ECHILD))
+        #expect(outcome.status == 1)
+        #expect(outcome.error.contains("couldn’t wait for x"))
+        #expect(try await repository.reportedAgents().first?.reportedState == .failed)
     }
 
     @Test func withMonitoringOffNothingRuns() async throws {
@@ -201,7 +211,7 @@ final class AgentCommandTests {
 
     @Test func aCommandThatCannotStartFails() async throws {
         try await startApp()
-        let outcome = await run(["run", "--", "no-such-tool"], childStatus: nil)
+        let outcome = await run(["run", "--", "no-such-tool"], child: nil)
         #expect(outcome.status == 127)
         #expect(try await repository.reportedAgents().first?.reportedState == .failed)
     }
@@ -215,9 +225,9 @@ final class AgentCommandTests {
     // MARK: The real child
 
     @Test func theRealChildReturnsItsExitStatus() {
-        #expect(ChildProcess.run(["/bin/sh", "-c", "exit 7"]) == 7)
-        #expect(ChildProcess.run(["true"]) == 0)
-        #expect(ChildProcess.run(["/bin/sh", "-c", "kill -TERM $$"]) == 128 + SIGTERM)
+        #expect(ChildProcess.run(["/bin/sh", "-c", "exit 7"]) == .exited(7))
+        #expect(ChildProcess.run(["true"]) == .exited(0))
+        #expect(ChildProcess.run(["/bin/sh", "-c", "kill -TERM $$"]) == .signaled(SIGTERM))
         #expect(ChildProcess.run(["focuspilot-no-such-command-here"]) == nil)
     }
 }

@@ -97,34 +97,50 @@ struct ReportedAgentTests {
     // MARK: Matching a folder to a task
 
     private let open: Set<Int64> = [1, 2, 3]
+    private let home = "/Users/o"
 
     @Test func anExplicitOpenTaskWins() {
         let links = [AgentTaskMatch.FolderLink(folder: "/p", taskID: 2, kind: .task)]
-        #expect(AgentTaskMatch.task(explicit: 3, folder: "/p", links: links, openTasks: open) == 3)
+        #expect(AgentTaskMatch.task(explicit: 3, folder: "/p", links: links, openTasks: open, home: home) == 3)
         // A closed or unknown task is ignored, and the folder decides.
-        #expect(AgentTaskMatch.task(explicit: 9, folder: "/p", links: links, openTasks: open) == 2)
+        #expect(AgentTaskMatch.task(explicit: 9, folder: "/p", links: links, openTasks: open, home: home) == 2)
     }
 
     @Test func theClosestFolderWinsByWholeComponents() {
         let links = [AgentTaskMatch.FolderLink(folder: "/Users/o/nlp", taskID: 1, kind: .project),
-                     AgentTaskMatch.FolderLink(folder: "/Users/o/nlp/paper", taskID: 2, kind: .task)]
-        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp/paper/figs", links: links, openTasks: open) == 2)
-        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp/code", links: links, openTasks: open) == 1)
-        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp-old", links: links, openTasks: open) == nil)
-        #expect(AgentTaskMatch.task(explicit: nil, folder: nil, links: links, openTasks: open) == nil)
+                     AgentTaskMatch.FolderLink(folder: "/Users/o/nlp/paper", taskID: 2, kind: .project)]
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp/paper/figs", links: links, openTasks: open, home: home) == 2)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp/code", links: links, openTasks: open, home: home) == 1)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/nlp-old", links: links, openTasks: open, home: home) == nil)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: nil, links: links, openTasks: open, home: home) == nil)
     }
 
     @Test func onATieTheOwnersLinkThenTheNewestWins() {
         let links = [AgentTaskMatch.FolderLink(folder: "/p", taskID: 1, kind: .project),
                      AgentTaskMatch.FolderLink(folder: "/p", taskID: 2, kind: .task),
                      AgentTaskMatch.FolderLink(folder: "/p", taskID: 3, kind: .task)]
-        #expect(AgentTaskMatch.task(explicit: nil, folder: "/p", links: links, openTasks: open) == 2)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/p", links: links, openTasks: open, home: home) == 2)
+    }
+
+    @Test func anOwnersLinkHoldsItsFolderOnly() {
+        let links = [AgentTaskMatch.FolderLink(folder: "/Users/o/thesis", taskID: 2, kind: .task),
+                     AgentTaskMatch.FolderLink(folder: "/Users/o", taskID: 3, kind: .task)]
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/thesis", links: links, openTasks: open, home: home) == 2)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/thesis/ch2", links: links, openTasks: open, home: home) == nil)
+    }
+
+    @Test func aLinkMadeInTheHomeFolderCapturesNothing() {
+        for root in ["/Users/o", "/Users/o/", "/Users", "/"] {
+            let links = [AgentTaskMatch.FolderLink(folder: root, taskID: 1, kind: .task)]
+            #expect(AgentTaskMatch.task(explicit: nil, folder: root, links: links, openTasks: open, home: home) == nil)
+            #expect(AgentTaskMatch.task(explicit: nil, folder: "/Users/o/x", links: links, openTasks: open, home: home) == nil)
+        }
     }
 
     @Test func doneTasksAndTheRootFolderMatchNothing() {
         let links = [AgentTaskMatch.FolderLink(folder: "/", taskID: 1, kind: .task),
                      AgentTaskMatch.FolderLink(folder: "/p", taskID: 8, kind: .task)]
-        #expect(AgentTaskMatch.task(explicit: nil, folder: "/p/q", links: links, openTasks: open) == nil)
+        #expect(AgentTaskMatch.task(explicit: nil, folder: "/p/q", links: links, openTasks: open, home: home) == nil)
     }
 
     // MARK: Go to agent
@@ -220,5 +236,20 @@ struct ReportedAgentTests {
                                    planSession: true))
         #expect(!ReviewHold.isHeld(item(at: wednesdayMorningInBogota.addingTimeInterval(600), reported: false),
                                    session: session(.running), planSession: true))
+    }
+
+    @Test func aBreakReleasesWhatCameBeforeItForGood() {
+        let beforeBreak = item(at: wednesdayMorningInBogota.addingTimeInterval(600))
+        let duringBreak = item(at: wednesdayMorningInBogota.addingTimeInterval(1500))
+        let breakEnd = wednesdayMorningInBogota.addingTimeInterval(1800)
+        let afterBreak = item(at: wednesdayMorningInBogota.addingTimeInterval(2000))
+        // On the break, both show.
+        #expect(!ReviewHold.isHeld(beforeBreak, session: session(.onBreak(until: breakEnd)), planSession: true))
+        #expect(!ReviewHold.isHeld(duringBreak, session: session(.onBreak(until: breakEnd)), planSession: true))
+        // Running again, they still show; only what came after waits.
+        for shown in [beforeBreak, duringBreak] {
+            #expect(!ReviewHold.isHeld(shown, session: session(.running), planSession: true, releasedAt: breakEnd))
+        }
+        #expect(ReviewHold.isHeld(afterBreak, session: session(.running), planSession: true, releasedAt: breakEnd))
     }
 }

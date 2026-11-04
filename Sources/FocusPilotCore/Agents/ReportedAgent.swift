@@ -131,7 +131,9 @@ public struct AgentReportReceipt: Codable, Equatable, Sendable {
     public var agentID: Int64
     public var label: String
     public var state: ReportedAgentState
-    /// The report moved the agent into Needs you: the raccoon peeks at once.
+    /// The report says the agent needs the owner: the raccoon peeks at once.
+    /// Every such report counts, even from an agent already waiting, since
+    /// each is a new request (Claude Code sends one per prompt).
     public var needsYouNow: Bool
     /// A finished or failed result went to the Review queue.
     public var queuedResult: Bool

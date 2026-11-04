@@ -17,11 +17,33 @@ extension AppModel {
     /// The Review queue as shown: a reported agent's result waits while a
     /// plan block runs, until its next break (D8).
     var reviewItems: [ReviewItem] {
-        allReviewItems.filter { !ReviewHold.isHeld($0, session: snapshot.activeSession, planSession: snapshot.planRun != nil) }
+        allReviewItems.filter {
+            !ReviewHold.isHeld($0, session: snapshot.activeSession, planSession: snapshot.activePlanRun != nil,
+                               releasedAt: reviewReleasedAt)
+        }
     }
 
     /// Results waiting for the next break.
     var heldReviewCount: Int { allReviewItems.count - reviewItems.count }
+
+    /// A break in the session ended: what was shown during it stays shown.
+    func noteReviewRelease(from old: FocusSession?, to new: FocusSession?) {
+        guard let old, case .onBreak = old.phase, new?.id == old.id else { return }
+        if case .onBreak = new?.phase { return }
+        reviewReleasedAt = .now
+    }
+
+    /// Keeps only agents still waiting for the owner, as last read; called
+    /// after each refresh, so a forgotten, answered or stale agent goes.
+    func pruneAgentsNeedingYou() {
+        let now = Date.now
+        let waiting = Set(reportedAgents.filter { $0.state(at: now) == .needsYou }.map(\.id))
+        let gone = agentsNeedingYou.filter { !waiting.contains($0.agentID) }
+        guard !gone.isEmpty else { return }
+        agentsNeedingYou.removeAll { !waiting.contains($0.agentID) }
+        UserNotices.removeNeedsYou(agentIDs: gone.map(\.agentID))
+        if let shown = raccoon.moment?.agentID, !waiting.contains(shown) { raccoon.endPeek(reevaluating: false) }
+    }
 
     func setAgentMonitoring(_ on: Bool) async {
         guard let coordinator else { return }
@@ -30,6 +52,12 @@ extension AppModel {
             agentMonitoringError = nil
         } catch {
             agentMonitoringError = "Could not change agent monitoring: \(error.localizedDescription)"
+        }
+        if !on {
+            // Nothing is listened to any more, so nothing still calls the owner.
+            UserNotices.removeNeedsYou(agentIDs: agentsNeedingYou.map(\.agentID))
+            agentsNeedingYou.removeAll()
+            if raccoon.moment?.agentID != nil { raccoon.endPeek(reevaluating: false) }
         }
         await refresh()
     }
@@ -40,6 +68,8 @@ extension AppModel {
     func agentReported(_ receipt: AgentReportReceipt) async {
         await refresh()
         agentsNeedingYou.removeAll { $0.agentID == receipt.agentID }
+        // A notification about an earlier request is out of date now.
+        UserNotices.removeNeedsYou(agentIDs: [receipt.agentID])
         if receipt.needsYouNow {
             agentsNeedingYou.append(RaccoonMoments.AgentNeed(agentID: receipt.agentID, label: receipt.label, since: .now))
             playTimeUpSound(.soon)
@@ -71,6 +101,7 @@ extension AppModel {
             agentNotice = "Could not remove the agent: \(error.localizedDescription)"
         }
         agentsNeedingYou.removeAll { $0.agentID == agentID }
+        UserNotices.removeNeedsYou(agentIDs: [agentID])
         await refresh()
     }
 
@@ -87,7 +118,7 @@ extension AppModel {
         let notice: String? = switch AgentWorkspace.action(for: agent.terminal) {
         case .none(let message): message
         case .activate(let app): activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
-        case .tab(let app, let tty): selectTab(tty, in: app)
+        case .tab(let app, let tty): await selectTab(tty, in: app)
         }
         if let notice { tell(notice, from: click) } else { agentNotice = nil }
     }
@@ -108,18 +139,25 @@ extension AppModel {
     /// Selects the tab through AppleScript. The first time, macOS asks the
     /// owner to let FocusPilot control the app (Automation); if that is
     /// declined, the app is still brought forward.
-    private func selectTab(_ tty: String, in app: AgentWorkspace.App) -> String? {
+    private func selectTab(_ tty: String, in app: AgentWorkspace.App) async -> String? {
         guard NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).first != nil else {
             return "\(app.name) isn’t running, so the agent has stopped."
         }
-        guard let source = AgentWorkspace.script(selecting: tty, in: app), let script = NSAppleScript(source: source) else {
+        guard let source = AgentWorkspace.script(selecting: tty, in: app) else {
             return activate(app) ? nil : "\(app.name) couldn’t be brought forward."
         }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if error == nil, result.booleanValue { return nil }
+        // Off the main actor: the first time, the Automation prompt waits
+        // for the owner, and the app must not freeze meanwhile. The script
+        // object is made and used on that one task only.
+        let (found, code) = await Task.detached { () -> (Bool, Int?) in
+            guard let script = NSAppleScript(source: source) else { return (false, nil) }
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            return (error == nil && result.booleanValue, error?[NSAppleScript.errorNumber] as? Int)
+        }.value
+        if found { return nil }
         _ = activate(app)
-        if let code = error?[NSAppleScript.errorNumber] as? Int {
+        if let code {
             // errAEEventNotPermitted: the owner declined, or has not allowed, Automation.
             return code == -1743
                 ? "\(app.name) is in front, but FocusPilot isn’t allowed to pick its tab. To allow it, turn on \(app.name) under FocusPilot in System Settings › Privacy & Security › Automation."

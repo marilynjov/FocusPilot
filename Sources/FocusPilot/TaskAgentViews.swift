@@ -133,18 +133,31 @@ private struct ReportedAgentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Redrawn each minute, so Working turns Unknown without a report.
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                details(at: context.date)
+            }
+            buttons
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+        .contrastBorder(cornerRadius: 8)
+    }
+
+    /// One item for VoiceOver, like a Review queue row; the buttons stay apart.
+    private func details(at now: Date) -> some View {
+        let state = agent.state(at: now)
+        let reported = agent.lastReportAt.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        return VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: [agent.label, agent.folder.map { ($0 as NSString).abbreviatingWithTildeInPath }]
                 .compactMap(\.self).joined(separator: " · "))
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            // Redrawn each minute, so Working turns Unknown without a report.
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                HStack(spacing: 6) {
-                    ReportedStateLabel(state: agent.state(at: context.date))
-                    Text(verbatim: "· \(agent.lastReportAt.formatted(.relative(presentation: .named, unitsStyle: .wide)))")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
+            HStack(spacing: 6) {
+                ReportedStateLabel(state: state)
+                Text(verbatim: "· \(reported)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             if let message = agent.lastMessage {
                 Text(verbatim: message)
@@ -155,25 +168,30 @@ private struct ReportedAgentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
-                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
-                if agent.terminal.app == "WarpTerminal", agent.folder != nil {
-                    Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
-                        .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
-                }
-                if reviewCount > 0 {
-                    Button("Review (\(reviewCount))", action: showReviewQueue)
-                }
-                Spacer()
-                Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
-                    .buttonStyle(.link)
-            }
-            .controlSize(.small)
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
-        .contrastBorder(cornerRadius: 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([agent.label, agent.folder.map { "in \(($0 as NSString).lastPathComponent)" }, state.title,
+                             "reported \(reported)", agent.lastMessage, agent.source.provenance]
+            .compactMap(\.self).joined(separator: ", "))
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 8) {
+            Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
+                .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
+            if agent.terminal.app == "WarpTerminal", agent.folder != nil {
+                Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
+                    .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
+            }
+            if reviewCount > 0 {
+                Button("Review (\(reviewCount))", action: showReviewQueue)
+            }
+            Spacer()
+            Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
+                .buttonStyle(.link)
+                .accessibilityLabel("Unlink \(agent.label)")
+        }
+        .controlSize(.small)
     }
 }
 
@@ -209,8 +227,10 @@ private struct UnlinkedAgentsView: View {
                     }
                     Spacer()
                     Button("Link Here") { Task { await model.linkReportedAgent(agent.id, toTask: taskID) } }
-                        .help("Links this agent, and new agents in its folder, to this task.")
+                        .help("Links this agent, and new agents in the same folder, to this task.")
+                        .accessibilityLabel("Link \(agent.label) to this task")
                     Button("Remove", systemImage: "xmark") { Task { await model.forgetReportedAgent(agent.id) } }
+                        .accessibilityLabel("Remove \(agent.label)")
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
                         .help("Forget this agent. It shows again if it reports.")

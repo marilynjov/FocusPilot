@@ -24,21 +24,45 @@ enum ReportedAgentStore {
         }
     }
 
+    /// At most this many agents FocusPilot has never heard from may start
+    /// reporting in any minute, so a process making up agents can't fill
+    /// the Agent panel.
+    static let newAgentsPerMinute = 10
+
+    enum Refusal: Error, Equatable {
+        case tooManyNewAgents
+    }
+
     /// Records a sanitized report. Nil, writing nothing, while agent
-    /// monitoring is off.
-    static func record(_ report: AgentReport, at now: Date, in db: Database) throws -> AgentReportReceipt? {
+    /// monitoring is off. `home` is the owner's home folder, which an
+    /// owner's link may not cover (see `AgentTaskMatch`).
+    static func record(_ report: AgentReport, at now: Date, home: String = NSHomeDirectory(),
+                       in db: Database) throws -> AgentReportReceipt? {
         guard try isMonitoring(in: db) else { return nil }
         try ReportedAgentRow.filter(Column("lastReportAt") < now.addingTimeInterval(-retention)).deleteAll(db)
 
+        // The time the CLI started, never later than now: a report's own
+        // claim about time is untrusted too.
+        let reportedAt = min(report.reportedAt ?? now, now)
         let state = report.status.state
         let existing = try ReportedAgentRow
             .filter(Column("source") == report.source.rawValue && Column("agentKey") == report.identity)
             .fetchOne(db)
+        if existing == nil {
+            let recent = try ReportedAgentRow.filter(Column("firstReportAt") > now.addingTimeInterval(-60)).fetchCount(db)
+            guard recent < newAgentsPerMinute else { throw Refusal.tooManyNewAgents }
+        }
         var row = existing ?? ReportedAgentRow(
             id: nil, source: report.source.rawValue, agentKey: report.identity, label: report.label, folder: report.folder,
             taskId: nil, linkedByOwner: false, state: state.rawValue, lastMessage: nil, firstReportAt: now,
-            lastReportAt: now, stateChangedAt: now)
+            lastReportAt: reportedAt, stateChangedAt: reportedAt)
         let previous = existing.map { (state: $0.agent.state(at: now), message: $0.lastMessage) }
+        // Async hooks can arrive out of order, e.g. a turn's Stop after the
+        // next prompt. An older report is already out of date: it changes
+        // neither the state nor the message, which came with the newer one.
+        // It still fills in what the agent never said, and a finished
+        // turn in it is still a result.
+        let isStale = existing.map { reportedAt < $0.lastReportAt } ?? false
 
         if !row.linkedByOwner {
             let explicit = try report.taskID.flatMap { try isOpen($0, in: db) ? $0 : nil }
@@ -46,37 +70,51 @@ enum ReportedAgentStore {
                 row.taskId = explicit
             } else if row.taskId == nil {
                 row.taskId = try AgentTaskMatch.task(explicit: nil, folder: report.folder ?? row.folder,
-                                                     links: folderLinks(in: db), openTasks: openTasks(in: db))
+                                                     links: folderLinks(in: db), openTasks: openTasks(in: db), home: home)
             }
         }
-        row.label = report.label
-        row.folder = report.folder ?? row.folder
-        row.terminalApp = report.terminal.app ?? row.terminalApp
-        row.terminalTTY = report.terminal.tty ?? row.terminalTTY
-        row.terminalSession = report.terminal.sessionID ?? row.terminalSession
-        if row.state != state.rawValue { row.stateChangedAt = now }
-        row.state = state.rawValue
-        row.lastMessage = report.summary
-        row.lastReportAt = now
+        // A made-up label never replaces one the agent gave.
+        if existing == nil || (!report.labelIsFallback && !isStale) { row.label = report.label }
+        if isStale {
+            row.folder = row.folder ?? report.folder
+            row.terminalApp = row.terminalApp ?? report.terminal.app
+            row.terminalTTY = row.terminalTTY ?? report.terminal.tty
+            row.terminalSession = row.terminalSession ?? report.terminal.sessionID
+        } else {
+            row.folder = report.folder ?? row.folder
+            row.terminalApp = report.terminal.app ?? row.terminalApp
+            row.terminalTTY = report.terminal.tty ?? row.terminalTTY
+            row.terminalSession = report.terminal.sessionID ?? row.terminalSession
+            if row.state != state.rawValue { row.stateChangedAt = reportedAt }
+            row.state = state.rawValue
+            row.lastMessage = report.summary
+            row.lastReportAt = reportedAt
+        }
         try row.save(db)
 
         // Each finished turn or run is a result, once: the same result
-        // reported again is not queued twice.
+        // reported again is not queued twice. A late one is compared with
+        // the agent's queued results, since the state has moved on.
         var queued = false
-        if (state == .ready || state == .failed), let taskId = row.taskId,
-           previous.map({ $0.state != state || $0.message != report.summary }) ?? true {
-            let text = report.summary ?? (state == .failed ? "The agent reported that it failed." : "The agent reported that it finished.")
+        let text = report.summary ?? (state == .failed ? "The agent reported that it failed." : "The agent reported that it finished.")
+        let isNew = isStale
+            ? try ReviewItemRow.filter(Column("reportedAgentId") == row.id && Column("outputText") == text
+                && Column("agentState") == state.rawValue).fetchCount(db) == 0
+            : previous.map { $0.state != state || $0.message != report.summary } ?? true
+        if state == .ready || state == .failed, let taskId = row.taskId, isNew {
             let lines = text.components(separatedBy: "\n")
             var item = ReviewItemRow(id: nil, taskId: taskId, linkId: nil, kind: AgentTransition.Review.finished.rawValue,
-                                     occurredAt: now, agentLabel: row.label, workspaceLabel: row.folder.map(Self.folderName),
+                                     occurredAt: reportedAt, agentLabel: row.label,
+                                     workspaceLabel: row.folder.map(Self.folderName),
                                      summary: lines.first, outputText: text, outputLineCount: lines.count, reviewedAt: nil,
                                      reportedAgentId: row.id, source: row.source, agentState: state.rawValue)
             try item.insert(db)
             queued = true
         }
         let taskTitle = try row.taskId.flatMap { try String.fetchOne(db, sql: "SELECT title FROM task WHERE id = ?", arguments: [$0]) }
-        return AgentReportReceipt(agentID: row.id!, label: row.label, state: state, needsYouNow: state == .needsYou,
-                                  queuedResult: queued, taskTitle: taskTitle)
+        let current = ReportedAgentState(rawValue: row.state) ?? state
+        return AgentReportReceipt(agentID: row.id!, label: row.label, state: current,
+                                  needsYouNow: !isStale && state == .needsYou, queuedResult: queued, taskTitle: taskTitle)
     }
 
     static func agents(in db: Database) throws -> [ReportedAgent] {

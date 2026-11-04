@@ -9,20 +9,23 @@ public struct AgentCommandSystem: Sendable {
     /// The controlling terminal's device, e.g. "/dev/ttys003", if any.
     public var controllingTerminal: @Sendable () -> String?
     public var currentDirectory: @Sendable () -> String
-    /// Runs the command with the terminal, returning its exit status, or
-    /// nil if it could not be started.
-    public var runChild: @Sendable ([String]) -> Int32?
+    /// Runs the command with the terminal and says how it ended, or nil if
+    /// it could not be started.
+    public var runChild: @Sendable ([String]) -> ChildExit?
     /// A new ID for one run.
     public var newRunID: @Sendable () -> String
+    /// The time now, for a run's final report.
+    public var clock: @Sendable () -> Date
 
     public init(standardInput: @escaping @Sendable () -> Data, controllingTerminal: @escaping @Sendable () -> String?,
-                currentDirectory: @escaping @Sendable () -> String, runChild: @escaping @Sendable ([String]) -> Int32?,
-                newRunID: @escaping @Sendable () -> String) {
+                currentDirectory: @escaping @Sendable () -> String, runChild: @escaping @Sendable ([String]) -> ChildExit?,
+                newRunID: @escaping @Sendable () -> String, clock: @escaping @Sendable () -> Date = Date.init) {
         self.standardInput = standardInput
         self.controllingTerminal = controllingTerminal
         self.currentDirectory = currentDirectory
         self.runChild = runChild
         self.newRunID = newRunID
+        self.clock = clock
     }
 
     public static let live = AgentCommandSystem(
@@ -101,7 +104,8 @@ extension FocusPilotCommand {
         let report = AgentReport(
             source: .command, status: status, label: name, key: options.session,
             folder: options.folder.map(absolute) ?? system.currentDirectory(), summary: options.summary,
-            terminal: terminalPlace(app: options.terminal, tty: options.tty, session: options.session), taskID: taskID)
+            terminal: terminalPlace(app: options.terminal, tty: options.tty, session: options.session), taskID: taskID,
+            reportedAt: now)
         return send(report, notesOnly: false)
     }
 
@@ -118,7 +122,10 @@ extension FocusPilotCommand {
                              terminal: terminalPlace(app: nil, tty: nil, session: nil)) {
         case .ignore: return Outcome(status: 0)
         case .unreadable: return Outcome(status: 1, error: "focuspilot: the hook's JSON on stdin could not be read.\n")
-        case .report(let report): return send(report, notesOnly: true)
+        case .report(var report):
+            // `now` was taken when the process started, before stdin was read.
+            report.reportedAt = now
+            return send(report, notesOnly: true)
         }
     }
 
@@ -191,7 +198,7 @@ extension FocusPilotCommand {
         let label = options.name ?? (program as NSString).lastPathComponent
         var report = AgentReport(source: .run, status: .working, label: label, key: system.newRunID(),
                                  folder: system.currentDirectory(), terminal: terminalPlace(app: nil, tty: nil, session: nil),
-                                 taskID: taskID)
+                                 taskID: taskID, reportedAt: now)
         // Nothing runs unless FocusPilot took the first report: with
         // monitoring off the owner hears why at once, not after the run.
         guard let (clean, _) = try? report.sanitized() else {
@@ -201,19 +208,41 @@ extension FocusPilotCommand {
         if case .failure(let message) = deliver(report) {
             return Outcome(status: 1, error: "focuspilot run: \(message) The command was not run.\n")
         }
-        guard let status = system.runChild(Array(command)) else {
+        let exit = system.runChild(Array(command))
+        report.reportedAt = system.clock()
+        var outcome: Outcome
+        switch exit {
+        case nil:
             report.status = .failed
             report.summary = "Could not start \(program)."
-            _ = deliver(report)
-            return Outcome(status: 127, error: "focuspilot run: \(program): command not found or not runnable.\n")
+            outcome = Outcome(status: 127, error: "focuspilot run: \(program): command not found or not runnable.\n")
+        case .exited(let status):
+            report.status = status == 0 ? .done : .failed
+            report.summary = "Exited with status \(status)."
+            outcome = Outcome(status: status)
+        case .signaled(let signal):
+            report.status = .failed
+            report.summary = "Stopped by signal \(signal)."
+            // Ended the same way as the child, so a shell or script sees it.
+            outcome = Outcome(status: 128 + signal, raisesSignal: signal)
+        case .waitFailed(let error):
+            report.status = .failed
+            report.summary = "FocusPilot lost track of the command."
+            outcome = Outcome(status: 1, error: "focuspilot run: couldn’t wait for \(program): \(String(cString: strerror(error))).\n")
         }
-        report.status = status == 0 ? .done : .failed
-        report.summary = status > 128 ? "Stopped by signal \(status - 128)." : "Exited with status \(status)."
         if case .failure(let message) = deliver(report) {
-            return Outcome(status: status, error: "focuspilot run: the result was not recorded: \(message)\n")
+            outcome.error += "focuspilot run: the result was not recorded: \(message)\n"
         }
-        return Outcome(status: status)
+        return outcome
     }
+}
+
+/// How `focuspilot run`'s child ended.
+public enum ChildExit: Equatable, Sendable {
+    case exited(Int32)
+    case signaled(Int32)
+    /// `waitpid` failed with this errno; how the child ended is unknown.
+    case waitFailed(Int32)
 }
 
 /// The child of `focuspilot run`, and the terminal it shares.
@@ -221,10 +250,9 @@ enum ChildProcess {
     /// Runs `command` (looked up on the PATH) with this process's terminal,
     /// environment and folder, and waits for it. Ctrl-C and Ctrl-\ go to the
     /// child, as they would without focuspilot; this process ignores them
-    /// meanwhile so it can still report how the child ended. Returns the
-    /// exit status, 128 + the signal if a signal ended it, or nil if it
+    /// meanwhile so it can still report how the child ended. Nil if it
     /// could not be started.
-    static let run: @Sendable ([String]) -> Int32? = { command in
+    static let run: @Sendable ([String]) -> ChildExit? = { command in
         var attributes = posix_spawnattr_t(nil as OpaquePointer?)
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
@@ -249,11 +277,11 @@ enum ChildProcess {
         guard posix_spawnp(&pid, command[0], nil, &attributes, &arguments, environ) == 0 else { return nil }
         var status: Int32 = 0
         while waitpid(pid, &status, 0) == -1 {
-            guard errno == EINTR else { return 1 }
+            guard errno == EINTR else { return .waitFailed(errno) }
         }
         // WIFEXITED / WEXITSTATUS / WTERMSIG, which Swift does not import.
         let signal = status & 0x7f
-        return signal == 0 ? (status >> 8) & 0xff : 128 + signal
+        return signal == 0 ? .exited((status >> 8) & 0xff) : .signaled(signal)
     }
 
     /// The controlling terminal's device, from the kernel's view of this

@@ -33,9 +33,18 @@ public struct AgentReport: Codable, Equatable, Sendable {
     public var terminal: TerminalPlace
     /// The task named with `--task`; it wins over folder matching.
     public var taskID: Int64?
+    /// The label was made up ("Claude Code · nlp") because the report
+    /// carried none, so it never replaces one the agent gave before:
+    /// Claude Code sends `session_title` only with some events.
+    public var labelIsFallback: Bool
+    /// When the CLI started, before it read the hook's stdin. Async hooks
+    /// can arrive out of order, so the app orders reports by this, not by
+    /// arrival. Nil means when it arrives.
+    public var reportedAt: Date?
 
     public init(source: AgentSource, status: Status, label: String, key: String? = nil, folder: String? = nil,
-                summary: String? = nil, terminal: TerminalPlace = TerminalPlace(), taskID: Int64? = nil) {
+                summary: String? = nil, terminal: TerminalPlace = TerminalPlace(), taskID: Int64? = nil,
+                labelIsFallback: Bool = false, reportedAt: Date? = nil) {
         self.source = source
         self.status = status
         self.label = label
@@ -44,6 +53,8 @@ public struct AgentReport: Codable, Equatable, Sendable {
         self.summary = summary
         self.terminal = terminal
         self.taskID = taskID
+        self.labelIsFallback = labelIsFallback
+        self.reportedAt = reportedAt
     }
 
     public static let labelLimit = 80
@@ -78,7 +89,7 @@ public struct AgentReport: Codable, Equatable, Sendable {
                                     tty: keep(terminal.tty, "--tty", AgentText.tty),
                                     sessionID: keep(terminal.sessionID, "--session",
                                                     { AgentText.identifier($0, limit: Self.keyLimit) })),
-            taskID: taskID.flatMap { $0 > 0 ? $0 : nil })
+            taskID: taskID.flatMap { $0 > 0 ? $0 : nil }, labelIsFallback: labelIsFallback, reportedAt: reportedAt)
         if let taskID, taskID <= 0 { notes.append("Ignored --task: it isn’t valid.") }
         return (report, notes)
     }

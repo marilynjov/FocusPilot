@@ -52,6 +52,8 @@ public enum ClaudeHookEvent: String, CaseIterable, Sendable {
     /// The report for this event's payload. `name` is `--name`, if given;
     /// otherwise the session's title, else "Claude Code · <folder>".
     /// `terminal` is what the hook's process knows of its terminal.
+    /// `session_title` comes only with SessionStart and UserPromptSubmit, so
+    /// a label made from the folder is marked as a fallback.
     public func outcome(payload data: Data, name: String?, terminal: TerminalPlace) -> Outcome {
         guard data.count <= Self.payloadLimit, let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
             return .unreadable
@@ -78,10 +80,10 @@ public enum ClaudeHookEvent: String, CaseIterable, Sendable {
         }
         let folder = payload.cwd.flatMap { $0.isEmpty ? nil : $0 }
         let place = folder.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty || $0 == "/" ? nil : $0 }
-        let label = [name, payload.session_title].compactMap { $0 }.first { AgentText.line($0, limit: 80) != nil }
-            ?? (place.map { "Claude Code · \($0)" } ?? "Claude Code")
+        let given = [name, payload.session_title].compactMap { $0 }.first { AgentText.line($0, limit: 80) != nil }
+        let label = given ?? (place.map { "Claude Code · \($0)" } ?? "Claude Code")
         return .report(AgentReport(source: .claudeCodeHook, status: status, label: label,
                                    key: payload.session_id.flatMap { $0.isEmpty ? nil : $0 }, folder: folder,
-                                   summary: summary, terminal: terminal))
+                                   summary: summary, terminal: terminal, labelIsFallback: given == nil))
     }
 }

@@ -49,6 +49,7 @@ struct ClaudeHookEventTests {
         #expect(report.source == .claudeCodeHook)
         #expect(report.status == .working)
         #expect(report.label == "Claude Code · nlp")
+        #expect(report.labelIsFallback)
         #expect(report.key == "abc123")
         #expect(report.folder == "/Users/o/Projects/nlp")
         #expect(report.summary == nil)
@@ -61,6 +62,7 @@ struct ClaudeHookEventTests {
         #expect(report.summary == nil)
         // A session's own title names it.
         #expect(report.label == "Ablation fixes")
+        #expect(!report.labelIsFallback)
     }
 
     @Test func aGivenNameWinsOverTheTitle() throws {

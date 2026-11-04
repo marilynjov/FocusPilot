@@ -19,10 +19,11 @@ struct ReportedAgentStorageTests {
     }
 
     private func report(_ status: AgentReport.Status, session: String = "s1", folder: String? = "/tmp/elsewhere",
-                        summary: String? = nil, taskID: Int64? = nil) async throws -> AgentReportReceipt? {
-        let report = AgentReport(source: .claudeCodeHook, status: status, label: "Claude Code · nlp", key: session,
+                        summary: String? = nil, taskID: Int64? = nil, label: String = "Claude Code · nlp",
+                        fallback: Bool = false, at reportedAt: Date? = nil) async throws -> AgentReportReceipt? {
+        let report = AgentReport(source: .claudeCodeHook, status: status, label: label, key: session,
                                  folder: folder, summary: summary, terminal: TerminalPlace(app: "WarpTerminal"),
-                                 taskID: taskID)
+                                 taskID: taskID, labelIsFallback: fallback, reportedAt: reportedAt)
         return try await repository.recordAgentReport(try report.sanitized().report)
     }
 
@@ -95,8 +96,10 @@ struct ReportedAgentStorageTests {
         let first = try #require(try await report(.working, session: "s1", folder: "/Users/owner/thesis"))
         try await repository.linkReportedAgent(first.agentID, toTask: id)
 
-        let second = try #require(try await report(.working, session: "s2", folder: "/Users/owner/thesis/ch2"))
+        let second = try #require(try await report(.working, session: "s2", folder: "/Users/owner/thesis"))
         #expect(second.taskTitle == "Explain baseline results")
+        // Only that folder: one inside it may be other work.
+        #expect(try await report(.working, session: "s3", folder: "/Users/owner/thesis/ch2")?.taskTitle == nil)
     }
 
     @Test func anOwnerUnlinkIsKeptThroughLaterReports() async throws {
@@ -167,5 +170,67 @@ struct ReportedAgentStorageTests {
         clock.set(wednesdayMorningInBogota.addingTimeInterval(8 * 24 * 3600))
         _ = try await report(.working, session: "new")
         #expect(try await repository.reportedAgents().map(\.key) == ["new"])
+    }
+
+    // MARK: Out of order, labels, floods
+
+    @Test func aLateReportDoesNotTurnTheStateBack() async throws {
+        try await repository.setAgentMonitoring(true)
+        let id = try await task()
+        let start = wednesdayMorningInBogota.addingTimeInterval(-60)
+        // The next prompt's report arrives before the turn's Stop.
+        _ = try await report(.working, taskID: id, at: start.addingTimeInterval(20))
+        let late = try #require(try await report(.done, summary: "Turn one done.", at: start.addingTimeInterval(10)))
+
+        #expect(late.state == .working)
+        #expect(!late.needsYouNow)
+        let agent = try #require(try await repository.reportedAgents().first)
+        #expect(agent.reportedState == .working)
+        #expect(agent.lastMessage == nil)
+        #expect(agent.lastReportAt == start.addingTimeInterval(20))
+        // The finished turn was real, so its result is queued, once.
+        #expect(late.queuedResult)
+        #expect(try await report(.done, summary: "Turn one done.", at: start.addingTimeInterval(10))?.queuedResult == false)
+        #expect(try await repository.reviewQueue().map(\.summary) == ["Turn one done."])
+    }
+
+    @Test func aLateNeedsYouDoesNotCallTheOwner() async throws {
+        try await repository.setAgentMonitoring(true)
+        let start = wednesdayMorningInBogota.addingTimeInterval(-60)
+        _ = try await report(.done, summary: "Done.", at: start.addingTimeInterval(20))
+        let late = try #require(try await report(.needsInput, at: start.addingTimeInterval(10)))
+        #expect(!late.needsYouNow)
+        #expect(try await repository.reportedAgents().first?.reportedState == .ready)
+    }
+
+    @Test func aTimeInTheFutureCountsAsNow() async throws {
+        try await repository.setAgentMonitoring(true)
+        _ = try await report(.working, at: wednesdayMorningInBogota.addingTimeInterval(86_400))
+        #expect(try await repository.reportedAgents().first?.lastReportAt == wednesdayMorningInBogota)
+    }
+
+    @Test func aFallbackLabelKeepsTheTitleGivenBefore() async throws {
+        try await repository.setAgentMonitoring(true)
+        _ = try await report(.working, label: "Ablation fixes")
+        let receipt = try #require(try await report(.done, label: "Claude Code · nlp", fallback: true))
+        #expect(receipt.label == "Ablation fixes")
+        #expect(try await repository.reportedAgents().first?.label == "Ablation fixes")
+        // A new agent still starts with one.
+        #expect(try await report(.working, session: "s2", label: "Claude Code · nlp", fallback: true)?.label
+            == "Claude Code · nlp")
+    }
+
+    @Test func tooManyNewAgentsInAMinuteAreRefused() async throws {
+        try await repository.setAgentMonitoring(true)
+        for index in 0..<ReportedAgentStore.newAgentsPerMinute {
+            _ = try await report(.working, session: "s\(index)")
+        }
+        await #expect(throws: ReportedAgentStore.Refusal.tooManyNewAgents) {
+            _ = try await self.report(.working, session: "one-too-many")
+        }
+        // Agents already known still report.
+        #expect(try await report(.done, session: "s0") != nil)
+        clock.set(wednesdayMorningInBogota.addingTimeInterval(61))
+        #expect(try await report(.working, session: "one-too-many") != nil)
     }
 }

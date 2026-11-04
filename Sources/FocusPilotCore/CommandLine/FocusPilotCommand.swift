@@ -12,6 +12,9 @@ public struct FocusPilotCommand: Sendable {
         public var status: Int32
         public var output = ""
         public var error = ""
+        /// `run`'s child was ended by this signal: the command ends itself
+        /// the same way once its output is written.
+        public var raisesSignal: Int32? = nil
     }
 
     public static let usage = """
@@ -41,7 +44,7 @@ public struct FocusPilotCommand: Sendable {
 
     let location: StorageLocation
     let environment: [String: String]
-    private let now: Date
+    let now: Date
     private let timeZone: TimeZone
     private let socketCreationDate: @Sendable (URL) -> Date?
     /// What the process and its terminal give agent reports; tests replace them.
