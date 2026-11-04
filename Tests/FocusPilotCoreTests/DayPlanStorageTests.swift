@@ -148,6 +148,52 @@ struct DayPlanStorageTests {
         #expect(plan.blocks.map(\.start) == [ClockTime(11, 30), ClockTime(12, 0)])
     }
 
+    @Test func aNewTaskAndItsBlockAreAddedTogether() async throws {
+        _ = try await repository.dayPlan(for: today)
+        let newTask = NewTask(title: "Write the essay", projectName: "Thesis")
+
+        let plan = try saved(try await repository.addBlock(task((9, 0), (10, 0)), forNew: newTask, to: today))
+
+        let stored = try #require(try await repository.tasks().first)
+        #expect(try await repository.tasks().count == 1)
+        #expect(stored.title == "Write the essay")
+        #expect(try await repository.todayTasks().map(\.title) == ["Write the essay"])
+        let block = try #require(plan.blocks.first { $0.kind == .task })
+        #expect(block.taskID == stored.id)
+        #expect(block.span == TimeSpan(ClockTime(9, 0), ClockTime(10, 0)))
+        #expect(plan.title(of: block) == "Write the essay")
+        #expect(plan.state == .draft)
+    }
+
+    @Test func aNewTaskIsNotSavedUntilItsBlockIs() async throws {
+        let lunch = try #require(try await repository.dayPlan(for: today).blocks.first)
+        let newTask = NewTask(title: "Call Ana")
+        let overLunch = task((11, 30), (12, 30))
+
+        #expect(try await repository.addBlock(overLunch, forNew: newTask, to: today) == .needsConfirmation([lunch]))
+        #expect(try await repository.tasks().isEmpty)
+
+        let late = task((16, 30), (17, 30))
+        await #expect(throws: DayPlanError.self) {
+            try await repository.addBlock(late, forNew: newTask, to: today)
+        }
+        #expect(try await repository.tasks().isEmpty)
+        await #expect(throws: NewTask.Invalid.missingTitle) {
+            try await repository.addBlock(task((9, 0), (10, 0)), forNew: NewTask(title: "  "), to: today)
+        }
+
+        let plan = try saved(try await repository.addBlock(overLunch, forNew: newTask, to: today, confirmed: true))
+        #expect(try await repository.tasks().map(\.title) == ["Call Ana"])
+        #expect(plan.blocks.count == 2)
+    }
+
+    @Test func aNewTaskNeedsAPlanForTheDay() async throws {
+        await #expect(throws: DayPlanError.planNotFound) {
+            try await repository.addBlock(task((9, 0), (10, 0)), forNew: NewTask(title: "Call Ana"), to: tomorrow)
+        }
+        #expect(try await repository.tasks().isEmpty)
+    }
+
     @Test func invalidEditsAreRefusedAndChangeNothing() async throws {
         let plan = try saved(try await addToToday(task((9, 0), (10, 0))))
         let clash = task((9, 30), (10, 30))

@@ -45,6 +45,17 @@ extension AppModel {
         }
     }
 
+    /// Captures a new task and places its block in one write (#29), then
+    /// reloads the task list so the new task shows there too.
+    func addBlock(_ block: DayBlock, forNew newTask: NewTask, on date: LocalDate,
+                  confirmed: Bool = false) async -> BlockEditOutcome {
+        let outcome = await blockEdit("Could not add the task to the plan", on: date) { coordinator, date in
+            try await coordinator.addBlock(block, forNew: newTask, to: date, confirmed: confirmed)
+        }
+        if case .saved = outcome { await refresh() }
+        return outcome
+    }
+
     /// A move, a resize, or a change of kind or task.
     func updateBlock(_ block: DayBlock, on date: LocalDate, confirmed: Bool = false) async -> BlockEditOutcome {
         await blockEdit("Could not change the block", on: date) { coordinator, date in
