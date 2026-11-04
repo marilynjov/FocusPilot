@@ -137,7 +137,9 @@ final class AgentCommandTests {
         #expect(refused.error == CommandService.monitoringOffMessage + "\n")
 
         for arguments in [["agent", "report", "--from-claude-hook"], ["agent", "report", "--from-claude-hook", "PreToolUse"],
-                          ["agent", "report", "--from-claude-hook", "Stop", "--colour", "red"]] {
+                          ["agent", "report", "--from-claude-hook", "Stop", "--colour", "red"],
+                          ["agent", "report", "--name", "x", "--from-claude-hook", "Stop"],
+                          ["agent", "report", "done", "--from-claude-hook", "Stop"]] {
             let outcome = await run(arguments, stdin: stopPayload)
             #expect(outcome.status == 1)
             #expect(outcome.output.isEmpty)

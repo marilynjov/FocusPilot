@@ -83,7 +83,8 @@ extension FocusPilotCommand {
     // MARK: agent report
 
     func agentReport(_ arguments: [String]) -> Outcome {
-        if arguments.first == "--from-claude-hook" {
+        // Anywhere in the line: a hook must never get a usage error's exit 2.
+        if arguments.contains("--from-claude-hook") {
             return claudeHookReport(arguments[...])
         }
         guard let word = arguments.first, let status = AgentReport.Status(rawValue: word),
