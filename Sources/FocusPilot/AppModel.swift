@@ -74,6 +74,11 @@ final class AppModel {
     @ObservationIgnored var lastBlockedVisitAt: Date?
     /// Blocked pages Chrome had shown at the last look; nil before the first.
     @ObservationIgnored var chromeBlockedPagesSeen: Int?
+    /// Each session's length as planned when first seen, so pauses and
+    /// breaks the owner takes, which move its planned end, don't change
+    /// which end warning it gets. In memory, like `raccoonExtensions`; a
+    /// session first seen after a relaunch counts from its end then.
+    @ObservationIgnored var raccoonStartLengths: [UUID: TimeInterval] = [:]
     /// Time "+10 min" added to each session, so its end warning comes back
     /// before the new end. In memory, like `raccoonShownMoments`.
     @ObservationIgnored var raccoonExtensions: [UUID: TimeInterval] = [:]
@@ -284,6 +289,9 @@ final class AppModel {
         noticeWrapUp(from: snapshot.session, to: latest.session)
         noteRaccoonBreakEnd(from: snapshot.session, to: latest.session)
         if let sound = TimeUpSound.due(from: snapshot, to: latest, at: .now) { playTimeUpSound(sound) }
+        if let session = latest.activeSession, raccoonStartLengths[session.id] == nil {
+            raccoonStartLengths[session.id] = session.plannedEnd.timeIntervalSince(session.startedAt)
+        }
         snapshot = latest
         if latest.activeSession == nil || latest.earlyEndAvailableAt != nil {
             isConfirmingEarlyEnd = false

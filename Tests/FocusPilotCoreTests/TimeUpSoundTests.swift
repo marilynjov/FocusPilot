@@ -48,6 +48,17 @@ struct TimeUpSoundTests {
         #expect(TimeUpSound.due(from: session(.running), to: next, at: minutes(20)) == nil)
     }
 
+    @Test func aNewSessionReplacingAnEndedOneIsSilent() {
+        // The end already sounded; the next session starting is not an end.
+        let ended = session(.ended(at: minutes(25), reason: .reachedPlannedEnd))
+        let next = session(.running, end: 60, id: UUID())
+        #expect(TimeUpSound.due(from: ended, to: next, at: minutes(25.5)) == nil)
+        // Nor after Complete, nor from no session at all.
+        let completed = session(.ended(at: minutes(20), reason: .completed))
+        #expect(TimeUpSound.due(from: completed, to: next, at: minutes(20)) == nil)
+        #expect(TimeUpSound.due(from: FocusSnapshot(), to: next, at: minutes(20)) == nil)
+    }
+
     @Test func aBreakThatRunsOutSoundsButBackToTaskDoesNot() {
         let onBreak = session(.onBreak(until: minutes(15), movesEnd: true), end: 30)
         #expect(TimeUpSound.due(from: onBreak, to: session(.running, end: 30), at: minutes(15)) == .up)

@@ -24,6 +24,7 @@ extension AppModel {
         }
         let now = Date.now
         guard let moment = RaccoonMoments.next(mode: displayPreferences.raccoonMode, session: session,
+                                               plannedLength: session.flatMap { raccoonStartLengths[$0.id] },
                                                extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
                                                endedBreak: raccoonEndedBreak, quickTimer: snapshot.quickTimer,
                                                plan: raccoonPlan, runs: raccoonRuns, blockedVisitAt: lastBlockedVisitAt,
@@ -78,8 +79,12 @@ extension AppModel {
         raccoonMomentsTask?.cancel()
         raccoonMomentsTask = Task { [weak self] in
             while let self, !Task.isCancelled {
-                let due = RaccoonMoments.nextDue(session: snapshot.session, quickTimer: snapshot.quickTimer,
-                                                 plan: raccoonPlan, runs: raccoonRuns, at: .now, timeZone: .current)
+                let session = snapshot.session
+                let due = RaccoonMoments.nextDue(session: session,
+                                                 plannedLength: session.flatMap { raccoonStartLengths[$0.id] },
+                                                 extended: session.flatMap { raccoonExtensions[$0.id] } ?? 0,
+                                                 quickTimer: snapshot.quickTimer, plan: raccoonPlan, runs: raccoonRuns,
+                                                 at: .now, timeZone: .autoupdatingCurrent)
                 let wait = min(15, max(0.2, (due?.timeIntervalSinceNow ?? 15) + 0.2))
                 try? await Task.sleep(for: .seconds(wait), tolerance: .seconds(wait < 15 ? 0.2 : 5))
                 guard displayPreferences.raccoonMode != .off,

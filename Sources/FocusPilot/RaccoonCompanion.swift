@@ -772,6 +772,9 @@ struct RaccoonWindowView: View {
     /// taking no room, without the buttons the card already has (owner
     /// feedback, 2026-11-03). In the window's corner it sits above it.
     var isInNowCard = false
+    /// Whether the Now card around it shows the session controls; when it
+    /// does not, the tag carries all of the peek's buttons.
+    var cardShowsSessionControls = true
 
     var body: some View {
         if model.raccoonIsInWindow,
@@ -783,10 +786,14 @@ struct RaccoonWindowView: View {
                 .allowsHitTesting(false)
             Group {
                 if isInNowCard {
-                    raccoon.overlay(alignment: .top) {
+                    // Trailing-aligned, so a long tag grows to the left and
+                    // stays inside the card.
+                    raccoon.overlay(alignment: .topTrailing) {
                         if let message = presence.message {
                             RaccoonWindowBubble(message: message, actions: cardlessActions, model: model, isCompact: true)
-                                .fixedSize()
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: RaccoonWindowBubble.compactMaxWidth, alignment: .trailing)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .alignmentGuide(.top) { $0[.bottom] - 18 }
                         }
                     }
@@ -806,10 +813,13 @@ struct RaccoonWindowView: View {
 }
 
 extension RaccoonWindowView {
-    /// The peek's buttons the Now card doesn't already offer: only Keep
-    /// going, after a session ended. Got it and Done are a click on the tag.
+    /// The peek's buttons the Now card doesn't already offer. With the
+    /// session controls in the card, only Keep going, after a session ended
+    /// (Got it and Done are a click on the tag); without them, all.
     var cardlessActions: [RaccoonPeekAction] {
-        (model.raccoonPeek?.actions ?? []).filter { if case .keepGoing = $0 { true } else { false } }
+        let actions = model.raccoonPeek?.actions ?? []
+        guard cardShowsSessionControls else { return actions }
+        return actions.filter { if case .keepGoing = $0 { true } else { false } }
     }
 }
 
@@ -817,6 +827,9 @@ extension RaccoonWindowView {
 /// 2026-11-03): the message and the peek's buttons, which run the same
 /// commands as the floating bubble's. Clicking the message dismisses it.
 private struct RaccoonWindowBubble: View {
+    /// The Now card's tag never grows wider than this; its text truncates.
+    static let compactMaxWidth: CGFloat = 240
+
     let message: String
     let actions: [RaccoonPeekAction]
     let model: AppModel

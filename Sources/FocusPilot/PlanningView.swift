@@ -43,9 +43,10 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
-                // On Today the raccoon is inside the Now card instead.
+                // On Today the raccoon is inside the Now card instead; an
+                // empty Today has none, so it stays in the corner there.
                 .overlay(alignment: .bottomTrailing) {
-                    if page != .today, page != nil { RaccoonWindowView(model: model) }
+                    if raccoonSpot == .corner { RaccoonWindowView(model: model) }
                 }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
@@ -139,6 +140,12 @@ struct PlanningView: View {
         }
     }
 
+    /// Where the raccoon is drawn in this window while it is in front.
+    private var raccoonSpot: RaccoonPresence.WindowSpot? {
+        RaccoonPresence.windowSpot(isInFront: model.raccoonIsInWindow, isToday: page == .today || page == nil,
+                                   isTodayEmpty: model.today.isEmpty || model.startupError != nil)
+    }
+
     @ViewBuilder private var content: some View {
         if let startupError = model.startupError {
             ContentUnavailableView("Database unavailable", systemImage: "exclamationmark.triangle", description: Text(startupError))
@@ -168,9 +175,21 @@ struct PlanningView: View {
             VStack(spacing: 0) {
                 TimelineView(.everyMinute) { context in
                     let now = TaskSections(model.today).now
-                    NowCard(item: now, caption: nil, showsProject: true, now: context.date, showsRaccoon: true)
+                    let isSelected = now != nil && todaySelection == now?.id
+                    NowCard(item: now, caption: nil, showsProject: true, now: context.date,
+                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected)
                         .contentShape(Rectangle())
                         .onTapGesture { todaySelection = now?.id }
+                        // Reachable without a pointer: Return selects it, and
+                        // VoiceOver offers the same.
+                        .focusable(now != nil)
+                        .onKeyPress(.return) {
+                            guard let now else { return .ignored }
+                            todaySelection = now.id
+                            return .handled
+                        }
+                        .accessibilityAction(named: "Show Agent Panel") { todaySelection = now?.id }
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)

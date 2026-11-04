@@ -11,6 +11,8 @@ struct NowCard: View {
     /// On Today the raccoon works inside this card, at its right (owner
     /// request, 2026-11-03).
     var showsRaccoon = false
+    /// Selected on Today, which shows its Agent panel.
+    var isSelected = false
     @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.palette) private var palette
 
@@ -18,15 +20,24 @@ struct NowCard: View {
         HStack(alignment: .bottom, spacing: 0) {
             content
             if showsRaccoon, let model {
-                RaccoonWindowView(model: model, margin: 0, isInNowCard: true)
+                RaccoonWindowView(model: model, margin: 0, isInNowCard: true,
+                                  cardShowsSessionControls: showsSessionControls(model))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .foregroundStyle(palette.color(.ink))
         .background(palette.color(.surface), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.color(.line)))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .stroke(palette.color(isSelected ? .accent : .line), lineWidth: isSelected ? 2 : 1))
         .accessibilityElement(children: .contain)
+    }
+
+    /// Whether the card shows the session's controls: only for a session
+    /// on this card's task (see `session(for:_:)`).
+    private func showsSessionControls(_ model: AppModel) -> Bool {
+        guard let item, let session = model.snapshot.activeSession else { return false }
+        return session.taskID == item.id
     }
 
     private var content: some View {
