@@ -55,7 +55,7 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 
 ## Proposed
 
-- Working hours and a daily fixed block such as lunch are owner preferences stored in the app. Calendar sync stays a release exclusion ([Product](../PRODUCT.md#release-exclusions)).
+- Working hours and a daily fixed block such as lunch are owner preferences stored in the app. Calendar sync stays a release exclusion ([Product](../PRODUCT.md#release-exclusions)). New working hours also apply to today's plan unless one of its blocks falls outside them; fixed blocks apply to new days only (owner request, 2026-11-02).
 - The raccoon has three presence modes: stays on screen, peeks in for reminders only, and off. It lives in a borderless, transparent, always-on-top window that lets clicks pass through except on the raccoon and its speech bubble (see the 2026-11-02 On screen entry above; validate on macOS 26, including full-screen apps and multiple displays).
 - Real frame-by-frame animation, if wanted later, is drawn from one base sprite. The macOS accessibility setting Reduce motion turns all raccoon motion off.
 - Raccoon moments: peek in at 10 minutes left, work alongside during focus, walk in 2 minutes before a break, coffee during breaks, nap at lunch, celebrate a finished block, cheer with "You got this" when a blocked site is opened, and change poses between blocks.
