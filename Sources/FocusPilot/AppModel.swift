@@ -98,6 +98,9 @@ final class AppModel {
     var dayPlanError: String?
     var dayPreferences = DayPreferences.standard
     var dayPreferencesError: String?
+    /// Today's plan kept these working hours at the last save, since a
+    /// block falls outside the new ones; Settings › Day offers to apply them.
+    var todayKeptHours: TimeSpan?
     /// Why the last quick timer command failed (D2); see `AppModel+QuickTimer.swift`.
     var quickTimerError: String?
     /// Pending reconcile at the next session deadline.

@@ -18,6 +18,7 @@ struct TaskList: View {
     /// Undo is not offered for the task a session is running on.
     var activeSessionTaskID: Int64?
     @Binding var selection: Int64?
+    @Environment(AppModel.self) private var model: AppModel?
 
     var body: some View {
         let sections = TaskSections(items)
@@ -27,6 +28,11 @@ struct TaskList: View {
                 if sections.now != nil || showsEmptyNow {
                     Section {
                         NowCard(item: sections.now, caption: nowCaption, showsProject: showsProject, now: context.date)
+                            // The list measures a row once; a new identity when
+                            // the card's session controls change makes it
+                            // measure again instead of cutting the card off.
+                            .id(model.map { NowCard.layoutKey($0, item: sections.now) })
+                            .transaction { $0.animation = nil }
                             .tag(sections.now?.id)
                             .listRowSeparator(.hidden)
                     }

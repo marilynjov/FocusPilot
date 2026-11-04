@@ -71,16 +71,19 @@ public actor TaskRepository {
         guard newTask.isValid else { throw NewTask.Invalid.missingTitle }
         let createdAt = now()
         // One write closure: the project and the task commit together or not at all.
-        return try await ownerDatabase.write { db in
-            // A capture joins the end of Next; only the owner pins a Now.
-            let lastRank = try Int.fetchOne(db, sql: "SELECT MAX(rank) FROM task WHERE status = 'next'") ?? -1
-            var task = TaskRecord(id: nil, title: newTask.title, nextAction: newTask.nextAction, rank: lastRank + 1,
-                                  createdAt: createdAt, updatedAt: createdAt)
-            task.deadline = newTask.deadline
-            task.projectId = try newTask.projectName.map { try Self.projectID(named: $0, in: db) }
-            try task.insert(db)
-            return task
-        }
+        return try await ownerDatabase.write { db in try Self.insertTask(newTask, createdAt: createdAt, db) }
+    }
+
+    /// Inserts a valid captured task inside the caller's write.
+    static func insertTask(_ newTask: NewTask, createdAt: Date, _ db: Database) throws -> TaskRecord {
+        // A capture joins the end of Next; only the owner pins a Now.
+        let lastRank = try Int.fetchOne(db, sql: "SELECT MAX(rank) FROM task WHERE status = 'next'") ?? -1
+        var task = TaskRecord(id: nil, title: newTask.title, nextAction: newTask.nextAction, rank: lastRank + 1,
+                              createdAt: createdAt, updatedAt: createdAt)
+        task.deadline = newTask.deadline
+        task.projectId = try newTask.projectName.map { try Self.projectID(named: $0, in: db) }
+        try task.insert(db)
+        return task
     }
 
     /// Open tasks (not done): the Now task, then Next and Later in manual order.
