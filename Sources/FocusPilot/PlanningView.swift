@@ -43,7 +43,10 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
-                .overlay(alignment: .bottomTrailing) { RaccoonWindowView(model: model) }
+                // On Today the raccoon is inside the Now card instead.
+                .overlay(alignment: .bottomTrailing) {
+                    if page != .today, page != nil { RaccoonWindowView(model: model) }
+                }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
                 .toolbar {
@@ -165,7 +168,7 @@ struct PlanningView: View {
             VStack(spacing: 0) {
                 TimelineView(.everyMinute) { context in
                     let now = TaskSections(model.today).now
-                    NowCard(item: now, caption: nil, showsProject: true, now: context.date)
+                    NowCard(item: now, caption: nil, showsProject: true, now: context.date, showsRaccoon: true)
                         .contentShape(Rectangle())
                         .onTapGesture { todaySelection = now?.id }
                 }

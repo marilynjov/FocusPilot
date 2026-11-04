@@ -8,10 +8,28 @@ struct NowCard: View {
     let caption: String?
     let showsProject: Bool
     let now: Date
+    /// On Today the raccoon works inside this card, at its right (owner
+    /// request, 2026-11-03).
+    var showsRaccoon = false
     @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.palette) private var palette
 
     var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            content
+            if showsRaccoon, let model {
+                RaccoonWindowView(model: model, margin: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .foregroundStyle(palette.color(.ink))
+        .background(palette.color(.surface), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.color(.line)))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Label {
@@ -60,11 +78,6 @@ struct NowCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .foregroundStyle(palette.color(.ink))
-        .background(palette.color(.surface), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(palette.color(.line)))
-        .accessibilityElement(children: .contain)
     }
 
     /// Changes whenever the card changes height: another task, its next
@@ -97,7 +110,6 @@ struct NowCard: View {
                     SessionHeader(session: session, now: model.now, timeFont: .title3.weight(.semibold))
                     SessionControls(model: model, showsReturnCue: false)
                 }
-                .frame(maxWidth: 360)
             } else {
                 Text("A session is running on “\(session.action)”.")
                     .font(.callout)

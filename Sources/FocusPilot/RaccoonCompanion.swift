@@ -767,6 +767,7 @@ private extension Array {
 /// the floating panel and never takes clicks.
 struct RaccoonWindowView: View {
     let model: AppModel
+    var margin = RaccoonCompanionController.margin
 
     var body: some View {
         if model.raccoonIsInWindow,
@@ -775,7 +776,7 @@ struct RaccoonWindowView: View {
            let art = model.raccoon.loadArt() {
             RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
-                .padding(RaccoonCompanionController.margin)
+                .padding(margin)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
