@@ -1,6 +1,8 @@
 import Foundation
 
-/// The `focuspilot` command: adds a task or reads tasks from a Herdr pane.
+/// The `focuspilot` command: adds a task or reads tasks from a Herdr pane,
+/// and lets agents report their status (`agent report`, `run`; see
+/// `FocusPilotCommand+Agents.swift`).
 ///
 /// It never writes the database itself. Adds go to the running app over the
 /// owner-only socket, or into the inbox when the app is closed. There is no
@@ -20,27 +22,42 @@ public struct FocusPilotCommand: Sendable {
                                            focuspilot add "Re-run ablation by fri 23:59"
                                            Options go before the text; after -- everything is text.
           focuspilot tasks [--json]        Show the owner's Now and this workspace's project.
+          focuspilot agent report <working|needs-input|done|failed> --name <label>
+                                  [--folder <path>] [--summary <text>] [--task <id>]
+                                  [--terminal <app>] [--tty <device>] [--session <id>]
+                                           Tell FocusPilot what an agent is doing. The folder
+                                           defaults to this one; the terminal to this one.
+          focuspilot agent report --from-claude-hook <event> [--name <label>]
+                                           For Claude Code hooks: reads the hook's JSON on stdin.
+          focuspilot run [--task <id>] [--name <label>] -- <command> [args...]
+                                           Runs the command here, reporting it working, then
+                                           done or failed by its exit status, which it returns.
 
         Tasks go to the project linked to this Herdr workspace, or to No project.
         focuspilot cannot change Now, the order, deadlines or existing tasks.
+        Agent reports need Agent monitoring on in FocusPilot's settings.
 
         """
 
-    private let location: StorageLocation
-    private let environment: [String: String]
+    let location: StorageLocation
+    let environment: [String: String]
     private let now: Date
     private let timeZone: TimeZone
     private let socketCreationDate: @Sendable (URL) -> Date?
+    /// What the process and its terminal give agent reports; tests replace them.
+    let system: AgentCommandSystem
 
     public init(location: StorageLocation, environment: [String: String], now: Date, timeZone: TimeZone,
                 socketCreationDate: @escaping @Sendable (URL) -> Date? = {
                     try? FileManager.default.attributesOfItem(atPath: $0.path)[.creationDate] as? Date
-                }) {
+                },
+                system: AgentCommandSystem = .live) {
         self.location = location
         self.environment = environment
         self.now = now
         self.timeZone = timeZone
         self.socketCreationDate = socketCreationDate
+        self.system = system
     }
 
     public func run(_ arguments: [String]) -> Outcome {
@@ -55,6 +72,11 @@ public struct FocusPilotCommand: Sendable {
                 return Outcome(status: 2, error: Self.usage)
             }
             return tasks(json: json)
+        case "agent":
+            guard arguments.dropFirst().first == "report" else { return Outcome(status: 2, error: Self.usage) }
+            return agentReport(Array(arguments.dropFirst(2)))
+        case "run":
+            return runCommand(Array(arguments.dropFirst()))
         case "help", "--help", "-h": return Outcome(status: 0, output: Self.usage)
         default: return Outcome(status: 2, error: Self.usage)
         }
@@ -88,7 +110,7 @@ public struct FocusPilotCommand: Sendable {
             switch try CommandSocketClient(path: location.commandSocketPath).send(.add(request)) {
             case .added(let result): return added(result, json: json)
             case .refused(let message), .failed(let message): return Outcome(status: 1, error: message + "\n")
-            case .tasks, .exception, .exceptionCancelled: return Outcome(status: 1, error: "FocusPilot gave an unexpected answer.\n")
+            case .tasks, .exception, .exceptionCancelled, .agentRecorded: return Outcome(status: 1, error: "FocusPilot gave an unexpected answer.\n")
             }
         } catch .pathTooLong {
             return Outcome(status: 1, error: "The FocusPilot data folder path is too long for its socket.\n")
@@ -143,7 +165,7 @@ public struct FocusPilotCommand: Sendable {
             switch try CommandSocketClient(path: location.commandSocketPath).send(.tasks(caller)) {
             case .tasks(let answer): scope = answer
             case .refused(let message), .failed(let message): return Outcome(status: 1, error: message + "\n")
-            case .added, .exception, .exceptionCancelled: return Outcome(status: 1, error: "FocusPilot gave an unexpected answer.\n")
+            case .added, .exception, .exceptionCancelled, .agentRecorded: return Outcome(status: 1, error: "FocusPilot gave an unexpected answer.\n")
             }
         } catch .pathTooLong {
             return Outcome(status: 1, error: "The FocusPilot data folder path is too long for its socket.\n")

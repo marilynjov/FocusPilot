@@ -316,6 +316,46 @@ enum OwnerSchema {
             }
             try db.create(index: "planRun_on_planDate", on: PlanRunRow.databaseTableName, columns: ["planDate"])
         }
+        migrator.registerMigration("owner-v15-reported-agents") { db in
+            // Agent monitoring (decision 0004, 2026-11-02; decision 0005):
+            // one row while it is on. Off by default, so no row.
+            try db.create(table: "agentMonitoring") { table in
+                table.primaryKey("id", .integer).check(sql: "id = 1")
+                table.column("since", .datetime).notNull()
+            }
+            // Agents that report through the focuspilot command or Claude
+            // Code hooks (decision 0005, step 1). The stored state is the
+            // last one reported; Unknown is worked out from its age.
+            try db.create(table: ReportedAgentRow.databaseTableName) { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("source", .text).notNull().check(sql: "source IN ('claudeCodeHook', 'command', 'run')")
+                table.column("agentKey", .text).notNull()
+                table.column("label", .text).notNull()
+                table.column("folder", .text)
+                table.column("taskId", .integer).references(TaskRecord.databaseTableName, onDelete: .setNull)
+                table.column("linkedByOwner", .boolean).notNull().defaults(to: false)
+                table.column("state", .text).notNull().check(sql: "state IN ('working', 'needsYou', 'ready', 'failed')")
+                table.column("lastMessage", .text)
+                table.column("firstReportAt", .datetime).notNull()
+                table.column("lastReportAt", .datetime).notNull()
+                table.column("stateChangedAt", .datetime).notNull()
+                table.column("terminalApp", .text)
+                table.column("terminalTTY", .text)
+                table.column("terminalSession", .text)
+                table.uniqueKey(["source", "agentKey"])
+            }
+            try db.create(index: "reportedAgent_on_taskId", on: ReportedAgentRow.databaseTableName, columns: ["taskId"])
+            // Review queue items from reported agents keep where they came
+            // from; Herdr's have neither column set.
+            try db.alter(table: ReviewItemRow.databaseTableName) { table in
+                table.add(column: "reportedAgentId", .integer)
+                    .references(ReportedAgentRow.databaseTableName, onDelete: .setNull)
+                table.add(column: "source", .text).check(sql: "source IN ('claudeCodeHook', 'command', 'run')")
+                table.add(column: "agentState", .text).check(sql: "agentState IN ('ready', 'failed')")
+            }
+            try db.create(index: "herdrReviewItem_on_reportedAgentId", on: ReviewItemRow.databaseTableName,
+                          columns: ["reportedAgentId"])
+        }
         return migrator
     }
 

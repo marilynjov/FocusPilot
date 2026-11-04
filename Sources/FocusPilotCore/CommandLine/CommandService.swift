@@ -9,6 +9,8 @@ public enum CommandRequest: Codable, Equatable, Sendable {
     case exception(ExceptionCommand)
     /// The owner left a strict-session exception wait for this scope.
     case cancelException(ExceptionScope)
+    /// An agent's status, from `focuspilot agent report` or `run` (decision 0005).
+    case agentReport(AgentReport)
 }
 
 /// A timed exception as the blocked page asks for it.
@@ -31,6 +33,7 @@ public enum CommandResponse: Codable, Equatable, Sendable {
     case tasks(HerdrTaskScope)
     case exception(ExceptionOutcome)
     case exceptionCancelled
+    case agentRecorded(AgentReportReceipt)
     /// Not done, with a message for the caller, e.g. the rate limit.
     case refused(String)
     case failed(String)
@@ -88,6 +91,10 @@ public actor CommandService {
     static let rateLimitMessage =
         "Refused: this pane has added \(AddRateLimit.limit) tasks in the last minute. Wait a minute and try again."
     static let exceptionCallerMessage = "Only the FocusPilot blocked page in Chrome can ask for a site exception."
+    public static let monitoringOffMessage =
+        "Refused: agent monitoring is off in FocusPilot. Turn it on in FocusPilot › Settings › General › Agent monitoring."
+    static let reportRateLimitMessage =
+        "Refused: this agent has reported \(AddRateLimit.limit) times in the last minute. Wait a minute and try again."
 
     private let repository: TaskRepository
     private let exceptions: (any ExceptionGate)?
@@ -95,6 +102,8 @@ public actor CommandService {
     private let exceptionCaller: ExceptionCallerCheck?
     private let now: @Sendable () -> Date
     private var rateLimit = AddRateLimit()
+    /// Reports count per agent, apart from adds.
+    private var reportLimit = AddRateLimit()
 
     public init(repository: TaskRepository, exceptions: (any ExceptionGate)? = nil, exceptionCaller: ExceptionCallerCheck? = nil,
                 now: @escaping @Sendable () -> Date = Date.init) {
@@ -130,6 +139,20 @@ public actor CommandService {
                 return .added(try await repository.addFromHerdr(add))
             } catch {
                 return .failed("FocusPilot could not save the task: \(error.localizedDescription)")
+            }
+        case .agentReport(let raw):
+            // Cleaned again: any local process can write to the socket.
+            guard let report = try? raw.sanitized().report else { return .refused("Refused: the report needs a --name.") }
+            guard reportLimit.allow("\(report.source.rawValue) \(report.identity)", at: now()) else {
+                return .refused(Self.reportRateLimitMessage)
+            }
+            do {
+                guard let receipt = try await repository.recordAgentReport(report) else {
+                    return .refused(Self.monitoringOffMessage)
+                }
+                return .agentRecorded(receipt)
+            } catch {
+                return .failed("FocusPilot could not record the report: \(error.localizedDescription)")
             }
         case .tasks(let caller):
             do {
