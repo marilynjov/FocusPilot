@@ -6,7 +6,8 @@ public struct RaccoonMoment: Equatable, Sendable {
     /// Lowest priority first: when several are due the last one shows, and
     /// a peek on screen gives way only to a later kind.
     public enum Kind: Int, CaseIterable, Comparable, Hashable, Sendable {
-        case nextBlock, blockedVisit, breakSoon, endWarning, breakOver, breakStarted, finished, timesUp
+        case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, breakOver, breakStarted, finished,
+             quickTimerUp, timesUp
 
         public static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -102,9 +103,12 @@ public enum RaccoonMoments {
     /// warning, a break coming up, or the next block coming up. The app
     /// looks again then, so a moment shows on time instead of up to a
     /// polling interval late. Nil when none is ahead.
-    public static func nextDue(session: FocusSession?, plan: DayPlan?, runs: [PlanRun], at now: Date,
-                               timeZone: TimeZone) -> Date? {
+    public static func nextDue(session: FocusSession?, quickTimer: QuickTimer? = nil, plan: DayPlan?, runs: [PlanRun],
+                               at now: Date, timeZone: TimeZone) -> Date? {
         var times: [Date] = []
+        if let quickTimer, quickTimer.isRunning {
+            times += [quickTimer.plannedEnd.addingTimeInterval(-QuickTimer.warning), quickTimer.plannedEnd]
+        }
         if let session, session.phase == .running {
             let length = session.plannedEnd.timeIntervalSince(session.startedAt)
             let threshold = length < shortSession ? shortWarning : warning
@@ -125,14 +129,18 @@ public enum RaccoonMoments {
 
     /// The moment to show now, if any. `session` is the latest one, which
     /// may have ended; `extended` is the time "+10 min" has added to it;
-    /// `endedBreak` is the last owner break that ran out; `shown` maps each
-    /// moment shown to when it was.
+    /// `endedBreak` is the last owner break that ran out; `quickTimer` is
+    /// the quick timer still running, if any; `shown` maps each moment shown
+    /// to when it was.
     public static func next(mode: RaccoonCompanionMode, session: FocusSession?, extended: TimeInterval = 0,
-                            endedBreak: EndedBreak? = nil, plan: DayPlan?, runs: [PlanRun], blockedVisitAt: Date?,
-                            shown: [RaccoonMoment.ID: Date], at now: Date, timeZone: TimeZone,
-                            locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
+                            endedBreak: EndedBreak? = nil, quickTimer: QuickTimer? = nil, plan: DayPlan?,
+                            runs: [PlanRun], blockedVisitAt: Date?, shown: [RaccoonMoment.ID: Date], at now: Date,
+                            timeZone: TimeZone, locale: Locale = .autoupdatingCurrent) -> RaccoonMoment? {
         guard mode != .off else { return nil }
         var due: [RaccoonMoment] = []
+        if let quickTimer, let moment = quickTimerMoment(quickTimer, at: now) {
+            due.append(moment)
+        }
         if let session {
             due += sessionMoments(session, extended: extended, plan: plan, runs: runs, at: now, timeZone: timeZone)
         }
@@ -239,6 +247,23 @@ public enum RaccoonMoments {
         case .paused:
             return []
         }
+    }
+
+    /// A quick timer (D2): "2 minutes left" as its notice says, then
+    /// "Time's up!" for the first minute after its end, once per timer.
+    private static func quickTimerMoment(_ timer: QuickTimer, at now: Date) -> RaccoonMoment? {
+        guard timer.isRunning else { return nil }
+        let remaining = timer.remaining(at: now)
+        let key = String(timer.id)
+        if remaining <= 0 {
+            guard -remaining <= freshness else { return nil }
+            let peek = RaccoonPeek(poseID: timesUpPose, message: "Time's up!", actions: [.gotIt])
+            return RaccoonMoment(id: .init(.quickTimerUp, key), peek: peek)
+        }
+        guard timer.plannedLength > QuickTimer.warning, remaining <= QuickTimer.warning, remaining > warningTooLate
+        else { return nil }
+        let peek = RaccoonPeek(poseID: "peek", message: "2 minutes left", actions: [.gotIt])
+        return RaccoonMoment(id: .init(.quickTimerWarning, key), peek: peek)
     }
 
     /// "Break's over" once, when a break the owner took ran out and the

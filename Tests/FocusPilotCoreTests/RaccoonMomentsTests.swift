@@ -47,10 +47,12 @@ struct RaccoonMomentsTests {
     }
 
     private func next(_ mode: RaccoonCompanionMode = .staysOnScreen, session: FocusSession? = nil,
-                      extended: TimeInterval = 0, endedBreak: RaccoonMoments.EndedBreak? = nil, plan: DayPlan? = nil,
-                      runs: [PlanRun] = [], blockedVisitAt: Date? = nil,
-                      shown: [RaccoonMoment.ID: Date] = [:], at time: String) -> RaccoonMoment? {
-        RaccoonMoments.next(mode: mode, session: session, extended: extended, endedBreak: endedBreak, plan: plan, runs: runs,
+                      extended: TimeInterval = 0, endedBreak: RaccoonMoments.EndedBreak? = nil,
+                      quickTimer: QuickTimer? = nil, plan: DayPlan? = nil, runs: [PlanRun] = [],
+                      blockedVisitAt: Date? = nil, shown: [RaccoonMoment.ID: Date] = [:],
+                      at time: String) -> RaccoonMoment? {
+        RaccoonMoments.next(mode: mode, session: session, extended: extended, endedBreak: endedBreak,
+                            quickTimer: quickTimer, plan: plan, runs: runs,
                             blockedVisitAt: blockedVisitAt, shown: shown, at: at(time), timeZone: bogota,
                             locale: britishEnglish)
     }
@@ -291,6 +293,58 @@ struct RaccoonMomentsTests {
         // Not while on another break or paused.
         let paused = session(from: "10:00", to: "10:35", .paused(since: at("10:15")))
         #expect(next(session: paused, endedBreak: ended, at: "10:15") == nil)
+    }
+
+    // MARK: Quick timer (2026-11-03)
+
+    private func quickTimer(from start: String, to end: String, id: Int64 = 3) -> QuickTimer {
+        QuickTimer(id: id, label: "Reply to Ana", startedAt: at(start), plannedEnd: at(end))
+    }
+
+    @Test func aQuickTimerIsWarnedAtTwoMinutesLeftAndCheeredWhenUp() throws {
+        let timer = quickTimer(from: "10:00", to: "10:20")
+
+        #expect(next(quickTimer: timer, at: "10:17") == nil)
+        let warning = try #require(next(quickTimer: timer, at: "10:18"))
+        #expect(warning.id == RaccoonMoment.ID(.quickTimerWarning, "3"))
+        #expect(warning.peek == RaccoonPeek(poseID: "peek", message: "2 minutes left", actions: [.gotIt]))
+        #expect(warning.sessionID == nil)
+        #expect(next(quickTimer: timer, shown: [warning.id: at("10:18")], at: "10:19") == nil)
+
+        let up = try #require(next(quickTimer: timer, at: "10:20"))
+        #expect(up.id == RaccoonMoment.ID(.quickTimerUp, "3"))
+        #expect(up.peek == RaccoonPeek(poseID: "playbow", message: "Time's up!", actions: [.gotIt]))
+        #expect(next(quickTimer: timer, shown: [up.id: at("10:20")], at: "10:20") == nil)
+        // A minute on it is old news, and another timer is new.
+        #expect(next(quickTimer: timer, at: "10:22") == nil)
+        #expect(next(quickTimer: quickTimer(from: "10:00", to: "10:20", id: 4), shown: [up.id: at("10:20")],
+                     at: "10:20")?.kind == .quickTimerUp)
+    }
+
+    @Test func aQuickTimerShowsOnlyInModesThatPeekAndNotOnceFinished() {
+        let timer = quickTimer(from: "10:00", to: "10:20")
+        #expect(next(.off, quickTimer: timer, at: "10:20") == nil)
+        #expect(next(.peeksForReminders, quickTimer: timer, at: "10:20")?.kind == .quickTimerUp)
+        var finished = timer
+        finished.endedAt = at("10:19")
+        finished.outcome = .finished
+        #expect(next(quickTimer: finished, at: "10:20") == nil)
+        // A timer no longer than its warning gets none.
+        #expect(next(quickTimer: quickTimer(from: "10:00", to: "10:02"), at: "10:00") == nil)
+    }
+
+    @Test func quickTimerMomentsSitNextToTheSessionOnes() {
+        let timer = quickTimer(from: "10:00", to: "11:00")
+        let ended = session(from: "10:00", to: "11:00", .ended(at: at("11:00"), reason: .reachedPlannedEnd))
+        #expect(next(session: ended, quickTimer: timer, at: "11:00")?.kind == .timesUp)
+        let running = session(from: "10:00", to: "11:00")
+        #expect(next(session: running, quickTimer: timer, at: "11:00")?.kind == .quickTimerUp)
+        let warned = quickTimer(from: "10:00", to: "10:52")
+        #expect(next(session: running, quickTimer: warned, at: "10:50")?.kind == .endWarning)
+        #expect(next(session: running, quickTimer: warned, shown: [RaccoonMoment.ID(.endWarning, "\(sessionID.uuidString)-0"): at("10:50")],
+                     at: "10:50")?.kind == .quickTimerWarning)
+        #expect(RaccoonMoments.nextDue(session: nil, quickTimer: warned, plan: nil, runs: [], at: at("10:00"),
+                                       timeZone: bogota) == at("10:50"))
     }
 
     // MARK: Blocked visits

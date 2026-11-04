@@ -24,4 +24,12 @@ struct MenuBarPreferencesTests {
 
         #expect(!MenuBarPreferences(defaults: defaults).showsFocusPanel)
     }
+
+    @Test func theTimeUpSoundIsOnByDefaultAndCanBeTurnedOff() {
+        #expect(MenuBarPreferences(defaults: defaults).playsTimeUpSound)
+
+        MenuBarPreferences(defaults: defaults).playsTimeUpSound = false
+
+        #expect(!MenuBarPreferences(defaults: defaults).playsTimeUpSound)
+    }
 }
