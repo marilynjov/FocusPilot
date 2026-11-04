@@ -1,6 +1,6 @@
 # Agent connections beyond Herdr
 
-Date: 2026-11-03. Status: proposed by the fork owner on 2026-11-03; nothing here is confirmed until the owner accepts this record. Items marked "validate" are unproven platform assumptions and need a primary source or a spike before they are built. In this fork, "owner" means the fork owner (decision 0004).
+Date: 2026-11-03. Status: proposed by the fork owner on 2026-11-03; the owner's answers below are confirmed, the rest is proposed until the owner accepts this record. Items marked "validate" are unproven platform assumptions and need a primary source or a spike before they are built. In this fork, "owner" means the fork owner (decision 0004).
 
 ## Why
 
@@ -27,13 +27,13 @@ An agent link has: a source (one of the connections below), a label, a working f
 | 1 | Herdr | Agents in Herdr panes | Working, blocked, done; jump to the pane | Exists (Phase 1) |
 | 2 | Generic command: `focuspilot agent report …` and `focuspilot run --task <id> -- <command>` | Any command-line agent or script | Started, needs you, finished, exit status, a short message | Proposed, first |
 | 3 | Claude Code hooks calling #2 | Claude Code in any terminal, Warp included | Session started, needs input, turn finished, last message | Proposed, first; validate event names and payloads against Claude Code's hooks documentation |
-| 4 | FocusPilot as an MCP server | AIs that speak MCP: Claude Code, Claude Desktop, Cursor, Codex and others | The AI can read the plan and current task, report its status, and propose tasks; FocusPilot validates every change | Proposed, second; validate each client's MCP support |
+| 4 | FocusPilot as an MCP server | AIs that speak MCP: Claude Code, Claude Desktop, Cursor, Codex and others | The AI reports its status only (owner, 2026-11-03) | Proposed, second; validate each client's MCP support |
 | 5 | Cursor hooks | Cursor's agent | Started, needs you, stopped | Proposed, third; validate that Cursor offers agent hooks and their events |
 | 6 | Codex `notify` | OpenAI Codex command-line tool | Turn finished | Proposed, third; validate the setting and its payload |
 | 7 | Cloud agents through GitHub | Claude Code on the web, Codex cloud, Copilot coding agent | Pull request opened, checks passed or failed, ready for review | Proposed, later, if the owner uses cloud agents |
 | 8 | Process watcher | Any agent process, no setup | Only "an agent is running", with no state | Proposed, fallback only |
 
-Connections 3, 5 and 6 are thin: each tool's hook calls the generic command (#2), so there is one validated entry point. MCP (#4) also feeds the same model and gives the future AI planner (D9) a way in.
+Connections 3, 5 and 6 are thin: each tool's hook calls the generic command (#2), so there is one validated entry point. MCP (#4) feeds the same model with status reports only.
 
 ## Going back to the agent's workspace
 
@@ -58,8 +58,8 @@ Notifications: FocusPilot's notifications are currently delivered quietly (provi
 3. Cursor and Codex adapters (#5, #6) after validation.
 4. GitHub cloud agents (#7) and the process watcher (#8) if the owner wants them.
 
-## Open questions for the owner
+## Confirmed by owner
 
-- Which tools besides Claude Code in Warp are in use (Cursor, Codex, Gemini, cloud agents)?
-- Should "Needs you" interrupt a focus block (raccoon peek and sound), or wait for the next break like results do? Proposed: wait during strict sessions, show a quiet raccoon peek otherwise.
-- Should an MCP-connected AI be allowed to propose tasks and plan changes (always shown for approval), or only read and report?
+- 2026-11-03: Claude Code is the tool in use today, but FocusPilot should support as many connections as possible; the order of work above stands.
+- 2026-11-03: When an agent needs the owner, the raccoon says so right away, during focus blocks too, strict sessions included, since agents usually work on the current task. It peeks with the agent's label and a button to go to its workspace, with the soft sound. Finished results still wait in the Review queue as above.
+- 2026-11-03: An AI connected through MCP only reports its status. It does not read or change the plan or tasks and does not propose tasks.
