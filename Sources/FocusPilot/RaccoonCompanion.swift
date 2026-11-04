@@ -827,7 +827,8 @@ extension RaccoonWindowView {
 /// 2026-11-03): the message and the peek's buttons, which run the same
 /// commands as the floating bubble's. Clicking the message dismisses it.
 private struct RaccoonWindowBubble: View {
-    /// The Now card's tag never grows wider than this; its text truncates.
+    /// The Now card's tag never grows wider than this: its text stays on
+    /// one line and truncates; any buttons sit in a row below the text.
     static let compactMaxWidth: CGFloat = 240
 
     let message: String
