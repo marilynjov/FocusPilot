@@ -47,7 +47,7 @@ extension FocusCoordinator {
     /// running. Completing a plan block's session before the block ends is
     /// "Done early": the block is recorded as ended then (D3).
     public func complete(confirmed: Bool = false) async throws -> SessionCompletion {
-        if let active = session, !active.hasEnded, active.mode == .strict, now() < active.plannedEnd {
+        if let active = session, !active.hasEnded, active.mode == .strict, active.remaining(at: now()) > 0 {
             if earlyEnd?.request != active.id {
                 guard confirmed else { return .needsConfirmation }
                 earlyEnd = StrictWait(request: active.id, confirmedAt: uptime())
@@ -56,7 +56,7 @@ extension FocusCoordinator {
             if let availableAt = earlyEndAvailableAt(), now() < availableAt { return .waitUntil(availableAt) }
         }
         var planChange: PlanRunChange?
-        if let active = session, !active.hasEnded, planRun?.sessionID == active.id, now() < active.plannedEnd {
+        if let active = session, !active.hasEnded, planRun?.sessionID == active.id, active.remaining(at: now()) > 0 {
             planChange = .endedEarly(sessionID: active.id, at: now())
         }
         try await handle(.complete, planChange: planChange)

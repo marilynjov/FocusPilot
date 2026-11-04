@@ -37,6 +37,7 @@ public struct SessionBlock: Hashable, Codable, Sendable {
     public var mode: SessionMode
     public var end: Date
     public var resumesAt: Date?
+    public var pausedSince: Date?
     public var targets: PolicyTargets
 
     public init(_ session: SessionPolicy, targets: PolicyTargets) {
@@ -44,6 +45,7 @@ public struct SessionBlock: Hashable, Codable, Sendable {
         mode = session.mode
         end = session.end
         resumesAt = session.resumesAt
+        pausedSince = session.pausedSince
         self.targets = targets
     }
 }

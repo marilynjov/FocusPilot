@@ -17,7 +17,7 @@ public struct MenuBarStatus: Equatable, Sendable {
         glyph = Self.glyph(phase: session?.phase, isObserveOnly: snapshot.isObserveOnly)
         timeText = session.flatMap { session in
             guard showsTime else { return nil }
-            let remaining = session.plannedEnd.timeIntervalSince(now)
+            let remaining = session.remaining(at: now)
             return reducesMotion ? "\(Int((max(0, remaining) / 60).rounded(.up))) min" : Self.format(remaining: remaining)
         }
         isTimeDimmed = glyph == .paused

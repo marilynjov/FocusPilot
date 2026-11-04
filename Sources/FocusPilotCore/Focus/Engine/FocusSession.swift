@@ -63,9 +63,22 @@ public struct FocusSession: Codable, Equatable, Sendable {
     /// Exception expiries (#14) will join this as further deadlines.
     public var nextDeadline: Date? {
         switch phase {
-        case .running, .paused: plannedEnd
+        case .running: plannedEnd
+        // The countdown is stopped: nothing is due until the owner resumes.
+        case .paused: nil
         case .onBreak(let until): min(until, plannedEnd)
         case .ended: nil
+        }
+    }
+
+    /// Focus time left at `now`. It stands still while paused, since
+    /// resuming moves `plannedEnd` later (owner decision, 2026-11-02).
+    public func remaining(at now: Date) -> TimeInterval {
+        switch phase {
+        case .running: plannedEnd.timeIntervalSince(now)
+        case .paused(let since): plannedEnd.timeIntervalSince(since)
+        case .onBreak: plannedEnd.timeIntervalSince(now)
+        case .ended: 0
         }
     }
 }

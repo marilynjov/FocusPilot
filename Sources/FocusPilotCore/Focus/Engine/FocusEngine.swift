@@ -24,10 +24,14 @@ public enum FocusEngine {
             return reconcile(persisted, at: now)
         }
 
+        // A pause stops the countdown (owner decision, 2026-11-02): resuming
+        // moves the planned end later by the pause. Breaks come from the day
+        // plan, which already set their time aside, so they move nothing.
         switch (event, session.phase) {
         case (.pause, .running):
             session.phase = .paused(since: now)
-        case (.resume, .paused):
+        case (.resume, .paused(let since)):
+            session.plannedEnd += now.timeIntervalSince(since)
             session.phase = .running
         case (.startBreak(let duration), .running):
             guard duration > 0 else { throw .nonPositiveDuration }
@@ -104,6 +108,8 @@ public enum FocusEngine {
         case (.onBreak(let until), .normal): resumesAt = until
         case (.paused, .normal), (.ended, _): return nil
         }
-        return SessionPolicy(sessionID: session.id, mode: session.mode, end: session.plannedEnd, resumesAt: resumesAt)
+        let pausedSince: Date? = if case .paused(let since) = session.phase { since } else { nil }
+        return SessionPolicy(sessionID: session.id, mode: session.mode, end: session.plannedEnd, resumesAt: resumesAt,
+                             pausedSince: pausedSince)
     }
 }

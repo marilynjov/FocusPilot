@@ -89,7 +89,7 @@ When the app cannot update the policy (crashed, quit, or asleep through the end 
 
 Exception expiries apply in both modes; an exception never outlives its expiry because the app is unavailable.
 
-Pauses and breaks (owner decision, 2026-10-14) never move the planned session end. In a strict session, session-only rules stay active during pauses and breaks; in a normal session they lift until the session resumes.
+A pause stops the countdown (owner decision, 2026-11-02, replacing 2026-10-14's "never move the planned session end"): resuming moves the planned end later by the time paused, and a strict session's policy carries `pausedSince` so the blocked page shows the time left standing still. Breaks come from the day plan, which already set their time aside, so they keep the planned end. In a strict session, session-only rules stay active during pauses and breaks; in a normal session they lift until the session resumes.
 
 Some rule sets are always active (owner decision, 2026-10-13); others follow a schedule or apply only during focus sessions. Always-on and scheduled rules have no session end: extensions keep enforcing them whether or not the app is running, and evaluate schedule windows against their own clock. Only session-only rules follow the normal/strict behavior above. Changing or removing an always-on rule is an explicit owner action in the app, never a model proposal applied automatically.
 

@@ -92,15 +92,34 @@ struct FocusEngineTimeTests {
         #expect(transition.effects == [.persist(ended), .publishPolicy(nil), .notify(.sessionReachedPlannedEnd)])
     }
 
-    @Test mutating func aPauseDoesNotMoveThePlannedEnd() throws {
+    @Test mutating func aPauseStopsTheCountdownAndResumingMovesTheEndLater() throws {
         let running = try start(minutes: 25)
         clock.advance(minutes: 10)
         let paused = try #require(FocusEngine.handle(.pause, session: running, at: clock.now).session)
+        #expect(paused.nextDeadline == nil)
         clock.advance(minutes: 30)
 
-        let transition = try FocusEngine.handle(.reconcile, session: paused, at: clock.now)
+        // Nothing is due while paused, and the time left stands still.
+        let reconciled = try FocusEngine.handle(.reconcile, session: paused, at: clock.now)
+        #expect(reconciled.session?.phase == paused.phase)
+        #expect(paused.remaining(at: clock.now) == 15 * 60)
 
-        #expect(transition.session?.phase == .ended(at: running.plannedEnd, reason: .reachedPlannedEnd))
+        let resumed = try #require(FocusEngine.handle(.resume, session: paused, at: clock.now).session)
+        #expect(resumed.plannedEnd == clock.minutes(from: running.plannedEnd, 30))
+        #expect(resumed.remaining(at: clock.now) == 15 * 60)
+    }
+
+    /// Breaks come from the day plan, which already set their time aside.
+    @Test mutating func aBreakKeepsThePlannedEnd() throws {
+        let running = try start(minutes: 50)
+        clock.advance(minutes: 20)
+        let onBreak = try #require(FocusEngine.handle(.startBreak(duration: 10 * 60), session: running, at: clock.now).session)
+        #expect(onBreak.plannedEnd == running.plannedEnd)
+        clock.advance(minutes: 4)
+        #expect(onBreak.remaining(at: clock.now) == 26 * 60)
+
+        let back = try #require(FocusEngine.handle(.endBreak, session: onBreak, at: clock.now).session)
+        #expect(back.plannedEnd == running.plannedEnd)
     }
 
     @Test mutating func anEventArrivingAfterAMissedPlannedEndIsJudgedAgainstTheEndedSession() throws {

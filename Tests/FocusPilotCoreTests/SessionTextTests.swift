@@ -18,11 +18,11 @@ struct SessionTextTests {
         #expect(SessionText(session(.ended(at: start, reason: .completed))).phase == "Ended")
     }
 
-    @Test func timeLeftCountsToThePlannedEndEvenWhilePaused() {
-        let paused = SessionText(session(.paused(since: start)))
+    @Test func timeLeftStandsStillWhilePaused() {
+        let paused = SessionText(session(.paused(since: start.addingTimeInterval(52))))
 
         #expect(paused.timeLeft(at: start.addingTimeInterval(52)) == "24:08")
-        #expect(paused.timeLeft(at: start.addingTimeInterval(40 * 60)) == "0:00")
+        #expect(paused.timeLeft(at: start.addingTimeInterval(40 * 60)) == "24:08")
     }
 
     @Test func reducedMotionShowsWholeMinutesLeft() {
