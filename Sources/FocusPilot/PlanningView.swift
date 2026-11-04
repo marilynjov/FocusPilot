@@ -148,17 +148,12 @@ struct PlanningView: View {
         } else if page == .settings {
             SettingsPage(model: model)
         } else {
-            // The inspector belongs to the whole page, so it runs the
-            // window's full height beside the timer and the list instead of
-            // opening under the timer card.
             VStack(spacing: 0) {
                 QuickTimerCard(model: model)
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                 todayTasks
             }
-            .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                           showReviewQueue: { page = .review })
         }
     }
 
@@ -176,20 +171,26 @@ struct PlanningView: View {
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
                      selection: $todaySelection)
+                .taskInspector(model: model, items: model.today, selection: $todaySelection,
+                               showReviewQueue: { page = .review })
         }
     }
 }
 
 extension View {
-    /// The selected task's Agent section in an inspector, open while a task
-    /// is selected.
+    /// The selected task's Agent section in a column beside the list, shown
+    /// while a task is selected. A plain column, not a window inspector, so
+    /// it sits under whatever is above the list (the Quick timer on Today)
+    /// and leaves the title bar whole (owner feedback, 2026-11-03).
     func taskInspector(model: AppModel, items: [TodayItem], selection: Binding<Int64?>,
                        showReviewQueue: @escaping () -> Void) -> some View {
-        inspector(isPresented: Binding(get: { selection.wrappedValue != nil },
-                                       set: { if !$0 { selection.wrappedValue = nil } })) {
+        HStack(spacing: 0) {
+            self
             if let task = items.first(where: { $0.id == selection.wrappedValue }) {
+                Divider()
                 TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue)
-                    .inspectorColumnWidth(min: 260, ideal: 300, max: 400)
+                    .frame(width: 300)
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }
