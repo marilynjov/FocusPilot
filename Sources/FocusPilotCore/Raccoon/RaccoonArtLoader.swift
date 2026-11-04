@@ -269,10 +269,13 @@ public struct RaccoonPresence: Equatable, Sendable {
     }
 
     /// The floating window: the task's pose while a session is under way
-    /// and the planning window is closed (the window shows it instead); a
-    /// peek replaces that while it lasts. Peeks-in mode shows only peeks.
+    /// and the planning window is not in front (the window shows it
+    /// instead); a peek replaces that while it lasts. Peeks-in mode shows
+    /// only peeks. While the window is in front it shows nothing, peeks
+    /// included: they show in the window (owner request, 2026-11-03).
     public static func resolve(mode: RaccoonCompanionMode, activity: RaccoonActivity?, isWindowOpen: Bool,
                                peek: RaccoonPeek?) -> RaccoonPresence? {
+        guard !isWindowOpen else { return nil }
         switch mode {
         case .off:
             return nil
@@ -280,17 +283,19 @@ public struct RaccoonPresence: Equatable, Sendable {
             return peek.map { RaccoonPresence(poseID: $0.poseID, message: $0.message) }
         case .staysOnScreen:
             if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
-            guard let activity, !isWindowOpen else { return nil }
-            return RaccoonPresence(poseID: activity.poseID)
+            return activity.map { RaccoonPresence(poseID: $0.poseID) }
         }
     }
 
-    /// The planning window, in On screen mode: the task's pose while a
-    /// session is under way. Hidden during a peek, which the floating
-    /// window shows, so there is only ever one raccoon.
+    /// The planning window while it is in front: a peek, with its bubble,
+    /// in On screen and Peeks-in modes, else in On screen mode the task's
+    /// pose while a session is under way. The floating window then shows
+    /// nothing, so there is only ever one raccoon.
     public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?,
                                 peek: RaccoonPeek? = nil) -> RaccoonPresence? {
-        guard mode == .staysOnScreen, peek == nil, let activity else { return nil }
+        guard mode != .off else { return nil }
+        if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
+        guard mode == .staysOnScreen, let activity else { return nil }
         return RaccoonPresence(poseID: activity.poseID)
     }
 }

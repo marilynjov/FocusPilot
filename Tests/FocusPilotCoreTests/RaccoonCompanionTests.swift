@@ -132,15 +132,20 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .paused) == RaccoonPresence(poseID: "sit"))
     }
 
-    @Test func theWindowShowsTheTaskOnlyInOnScreenModeAndNeverDuringAPeek() {
+    @Test func theWindowShowsTheTaskInOnScreenModeAndPeeksWhileInFront() {
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working) == RaccoonPresence(poseID: "laptop"))
         #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working) == nil)
-        // A peek shows in the floating window only, never in both.
-        let peek = RaccoonPeek(poseID: "peek")
-        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, peek: peek) == nil)
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
+        // While the window is in front a peek shows there, never on screen too.
+        let peek = RaccoonPeek(poseID: "peek", message: "10 minutes left")
+        for mode in [RaccoonCompanionMode.staysOnScreen, .peeksForReminders] {
+            #expect(RaccoonPresence.inWindow(mode: mode, activity: .working, peek: peek)
+                == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
+            #expect(RaccoonPresence.resolve(mode: mode, activity: .working, isWindowOpen: true, peek: peek) == nil)
+        }
+        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: nil, peek: peek)?.poseID == "peek")
         #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: nil) == nil)
         #expect(RaccoonPresence.inWindow(mode: .off, activity: .working) == nil)
+        #expect(RaccoonPresence.inWindow(mode: .off, activity: .working, peek: peek) == nil)
     }
 
     @Test func peeksShowOnlyWhenAReminderAsks() {
@@ -148,7 +153,8 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: .working, isWindowOpen: false, peek: nil) == nil)
         #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: nil, isWindowOpen: false, peek: peek)
             == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
-        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: peek)?.poseID == "peek")
+        // In another app the floating raccoon shows it.
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: peek)?.poseID == "peek")
     }
 
     @Test func offShowsNothing() {

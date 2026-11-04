@@ -347,6 +347,33 @@ struct RaccoonMomentsTests {
                                        timeZone: bogota) == at("10:50"))
     }
 
+    // MARK: Break ending (2026-11-03)
+
+    @Test func aMinuteBeforeABreakEndsItOffersBackToTaskOnce() throws {
+        let onBreak = session(from: "10:00", to: "10:40", .onBreak(until: at("10:20"), movesEnd: true))
+        let started = RaccoonMoment.ID(.breakStarted, "\(sessionID.uuidString)-\(at("10:20").timeIntervalSinceReferenceDate)")
+
+        #expect(next(session: onBreak, shown: [started: at("10:15")], at: "10:18") == nil)
+        let moment = try #require(next(session: onBreak, shown: [started: at("10:15")], at: "10:19"))
+        #expect(moment.kind == .breakEnding)
+        #expect(moment.peek == RaccoonPeek(poseID: "coffee", message: "1 minute left of your break", actions: [.backToTask]))
+        #expect(moment.sessionID == sessionID)
+        #expect(next(session: onBreak, shown: [started: at("10:15"), moment.id: at("10:19")], at: "10:19") == nil)
+        // In its last minute a break is ending: no coffee peek for it then.
+        #expect(next(session: onBreak, at: "10:19")?.kind == .breakEnding)
+        #expect(RaccoonMoments.nextDue(session: onBreak, plan: nil, runs: [], at: at("10:15"), timeZone: bogota)
+            == at("10:19"))
+    }
+
+    @Test func aMinuteBeforeLunchEndsTheRaccoonIsStillNapping() {
+        let onLunch = session(from: "12:30", to: "14:00", .onBreak(until: at("13:00")))
+        let runs = [run(3, from: "12:30", breaksStarted: [4])]
+        let moment = next(session: onLunch, plan: day, runs: runs, at: "12:59")
+        #expect(moment?.kind == .breakEnding)
+        #expect(moment?.peek.poseID == "sleep")
+        #expect(moment?.peek.actions == [.backToTask])
+    }
+
     // MARK: Blocked visits
 
     @Test func aBlockedVisitIsCheeredWithACooldown() throws {

@@ -6,7 +6,8 @@ public struct RaccoonMoment: Equatable, Sendable {
     /// Lowest priority first: when several are due the last one shows, and
     /// a peek on screen gives way only to a later kind.
     public enum Kind: Int, CaseIterable, Comparable, Hashable, Sendable {
-        case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, breakOver, breakStarted, finished,
+        case nextBlock, blockedVisit, breakSoon, quickTimerWarning, endWarning, breakOver, breakStarted, breakEnding,
+             finished,
              quickTimerUp, timesUp
 
         public static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
@@ -88,6 +89,10 @@ public enum RaccoonMoments {
     /// Closer to the end than this, a warning is no use: time's up is next.
     static let warningTooLate: TimeInterval = 30
     static let breakNotice: TimeInterval = 2 * 60
+    /// "1 minute left of your break" (owner request, 2026-11-03).
+    static let breakEndingNotice: TimeInterval = 60
+    /// Closer to a break's end than this, its reminder is no use.
+    static let breakEndingTooLate: TimeInterval = 10
     static let nextBlockNotice: TimeInterval = 10 * 60
     static let freshness: TimeInterval = 60
     static let timesUpPose = "playbow"
@@ -108,6 +113,9 @@ public enum RaccoonMoments {
         var times: [Date] = []
         if let quickTimer, quickTimer.isRunning {
             times += [quickTimer.plannedEnd.addingTimeInterval(-QuickTimer.warning), quickTimer.plannedEnd]
+        }
+        if let session, case .onBreak(let until, _) = session.phase {
+            times += [until.addingTimeInterval(-breakEndingNotice), until]
         }
         if let session, session.phase == .running {
             let length = session.plannedEnd.timeIntervalSince(session.startedAt)
@@ -211,12 +219,23 @@ public enum RaccoonMoments {
             let current = movesEnd ? nil
                 : plan.flatMap { currentBreak(of: session, plan: $0, runs: runs, at: now, timeZone: timeZone) }
             let key = "\(id)-\(current.map { String($0.blockID) } ?? String(until.timeIntervalSinceReferenceDate))"
-            let peek = if let current, let plan, isLunch(current, in: plan) {
-                RaccoonPeek(poseID: RaccoonPresence.lunchPose, message: "Lunch time")
-            } else {
-                RaccoonPeek(poseID: RaccoonPresence.breakPose, message: "Enjoy your break", actions: [.backToTask])
+            let lunch = if let current, let plan { isLunch(current, in: plan) } else { false }
+            let peek = lunch ? RaccoonPeek(poseID: RaccoonPresence.lunchPose, message: "Lunch time")
+                : RaccoonPeek(poseID: RaccoonPresence.breakPose, message: "Enjoy your break", actions: [.backToTask])
+            // In its last minute a break is ending, not starting.
+            let left = until.timeIntervalSince(now)
+            guard left <= breakEndingNotice else {
+                return [RaccoonMoment(id: .init(.breakStarted, key), peek: peek, sessionID: session.id)]
             }
-            return [RaccoonMoment(id: .init(.breakStarted, key), peek: peek, sessionID: session.id)]
+            var moments: [RaccoonMoment] = []
+            // A minute before any break ends, owner's or plan's, once.
+            if left > breakEndingTooLate {
+                let ending = RaccoonPeek(poseID: lunch ? RaccoonPresence.lunchPose : RaccoonPresence.breakPose,
+                                         message: "1 minute left of your break", actions: [.backToTask])
+                moments.append(RaccoonMoment(id: .init(.breakEnding, "\(id)-\(until.timeIntervalSinceReferenceDate)"),
+                                             peek: ending, sessionID: session.id))
+            }
+            return moments
         case .running:
             var moments: [RaccoonMoment] = []
             let length = session.plannedEnd.timeIntervalSince(session.startedAt)
