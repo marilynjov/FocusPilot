@@ -44,8 +44,6 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
-                // On Today the raccoon is inside the Now card instead; an
-                // empty Today has none, so it stays in the corner there.
                 // Why the last change to a task failed, whichever page made it.
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if let error = model.taskError {
@@ -55,6 +53,8 @@ struct PlanningView: View {
                             .padding(.vertical, 6)
                     }
                 }
+                // On Today the raccoon is inside the Now card instead; an
+                // empty Today has none, so it stays in the corner there.
                 .overlay(alignment: .bottomTrailing) {
                     if raccoonSpot == .corner { RaccoonWindowView(model: model) }
                 }
@@ -250,14 +250,13 @@ extension View {
         let item = items.first { $0.id == id.wrappedValue }
         return confirmationDialog(
             "Delete “\(item?.title ?? "this task")”?",
-            isPresented: Binding(get: { id.wrappedValue != nil }, set: { if !$0 { id.wrappedValue = nil } })
-        ) {
-            Button("Delete Task", role: .destructive) {
-                if let taskID = id.wrappedValue { Task { await model.deleteTask(taskID) } }
-            }
+            isPresented: Binding(get: { id.wrappedValue != nil }, set: { if !$0 { id.wrappedValue = nil } }),
+            presenting: id.wrappedValue
+        ) { taskID in
+            Button("Delete Task", role: .destructive) { Task { await model.deleteTask(taskID) } }
             Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This also removes its plan blocks, focus sessions and wrap-ups. It can’t be undone.")
+        } message: { _ in
+            Text("This also removes its plan blocks, focus sessions, wrap-ups, Review queue results and agent links. It can’t be undone.")
         }
     }
 

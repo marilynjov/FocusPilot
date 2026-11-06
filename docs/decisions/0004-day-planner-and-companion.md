@@ -61,6 +61,7 @@ This follows the existing rule: AI proposes; deterministic code validates and ex
 - Raccoon moments: peek in at 10 minutes left, work alongside during focus, walk in 2 minutes before a break, coffee during breaks, nap at lunch, celebrate a finished block, cheer with "You got this" when a blocked site is opened, and change poses between blocks.
 - Quick timer presets: 10 and 20 minutes, with any other length typed in (owner decision, 2026-11-03; first proposed as 10, 20, 30 and 45); the raccoon warns at 2 minutes left.
 - Stats count only time in planned blocks and quick timers, never total screen time, and show what was done next to the time (from wrap-ups and finished blocks), because time in a block is not proof of output ([Product](../PRODUCT.md#principles), principle 8). The planner may propose a buffer from past estimate accuracy ("big tasks take you about 20% longer"); it never changes plans without approval.
+- Deleting a task (requested by the owner, 2026-11-06, #38) removes its plan blocks, focus sessions, wrap-ups, Review queue results and agent links, narrowing "every wrap-up is kept as history" (decision 0003, 2026-10-17) to tasks that still exist. Pilot metrics keep their rows without the task. Proposed: an approved plan stays approved when a block goes with its task, since nothing unapproved is added and a draft would silently stop the rest of the day.
 
 ## Conflicts with earlier decisions
 

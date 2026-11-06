@@ -21,9 +21,15 @@ extension TaskRepository {
                     // A new session never joins one still active: the
                     // coordinator serializes steps, and this keeps two
                     // starts from both being stored as running regardless.
-                    if try !SessionRow.exists(db, key: session.id.uuidString),
-                       let latest = try SessionRow.order(Column.rowID.desc).fetchOne(db)?.session(), !latest.hasEnded {
-                        throw FocusEngineError.sessionAlreadyActive
+                    if try !SessionRow.exists(db, key: session.id.uuidString) {
+                        if let latest = try SessionRow.order(Column.rowID.desc).fetchOne(db)?.session(), !latest.hasEnded {
+                            throw FocusEngineError.sessionAlreadyActive
+                        }
+                        // focusSession.taskID has no foreign key, and a start
+                        // already under way can lose its task to a delete.
+                        guard try TaskRecord.exists(db, key: session.taskID) else {
+                            throw FocusCoordinator.SessionError.noCurrentTask
+                        }
                     }
                     try SessionRow(session).save(db)
                 case .publishPolicy:

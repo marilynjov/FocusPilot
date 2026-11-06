@@ -44,8 +44,8 @@ struct TaskCommands: Commands {
             item("Move Up", .up, KeyboardShortcut(.upArrow, modifiers: [.command, .option]))
             item("Move Down", .down, KeyboardShortcut(.downArrow, modifiers: [.command, .option]))
             Divider()
+            // No shortcut: ⌘⌫ also deletes to the start of a line in text fields.
             Button("Delete Task…") { actions?.delete?() }
-                .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(actions?.delete == nil)
         }
     }

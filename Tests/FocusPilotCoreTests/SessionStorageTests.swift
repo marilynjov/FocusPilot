@@ -8,9 +8,11 @@ struct SessionStorageTests {
     private let location: StorageLocation
     private let repository: TaskRepository
 
-    init() throws {
+    init() async throws {
         location = StorageLocation(directory: try makeTemporaryDirectory())
         repository = try TaskRepository(location: location)
+        // The task `FocusSession.sample` is on; a session needs its task.
+        _ = try await repository.addTask(title: "Write the essay")
     }
 
     private func transition(_ session: FocusSession?, publishes: Int) -> FocusTransition {

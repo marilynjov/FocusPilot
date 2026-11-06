@@ -10,10 +10,17 @@ import Foundation
 /// `snapshots()` subscribers, so the menu bar stays current without the
 /// planning window.
 public actor FocusCoordinator {
-    public enum SessionError: Error, Equatable {
+    public enum SessionError: Error, Equatable, LocalizedError {
         case noCurrentTask
         /// A wrap-up was asked for a session that is still running or paused.
         case sessionStillActive
+
+        public var errorDescription: String? {
+            switch self {
+            case .noCurrentTask: "That task is finished or no longer exists."
+            case .sessionStillActive: "The session is still under way."
+            }
+        }
     }
 
     private let herdr: (any HerdrWorkspaceSource)?
@@ -178,11 +185,27 @@ public actor FocusCoordinator {
 
     // MARK: Deleting tasks
 
-    /// Deletes a task for good, then looks at the plan again, since a block
-    /// that was due may be gone.
+    /// Deletes a task for good, in turn with session steps, then looks at
+    /// the plan again, since a block that was due may be gone. If the latest
+    /// session was on this task, the one before it becomes the latest, so
+    /// nothing goes on offering the deleted task (Keep going).
     public func deleteTask(_ taskID: Int64) async throws {
-        try await repository.deleteTask(taskID)
+        let previous = stepInProgress
+        let step = Task { () async throws -> Void in
+            await previous?.value
+            try await self.performDelete(taskID)
+        }
+        stepInProgress = Task { _ = await step.result }
+        try await step.value
         await followPlanAfterAction()
+    }
+
+    private func performDelete(_ taskID: Int64) async throws {
+        try await repository.deleteTask(taskID)
+        guard session?.taskID == taskID else { return }
+        if planRun?.sessionID == session?.id { planRun = nil }
+        session = try await repository.latestSession()
+        await broadcast()
     }
 
     // MARK: Tasks from the focuspilot CLI

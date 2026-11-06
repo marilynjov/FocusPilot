@@ -222,13 +222,17 @@ public actor TaskRepository {
     /// so a plan block starting meanwhile cannot lose its task. A plan stays
     /// approved: removing a block adds nothing the owner has not approved, and
     /// a draft would silently stop the rest of the day. Reported agents become
-    /// unlinked, and pilot metrics keep their numbers without the task.
+    /// unlinked and may match a folder again, and pilot metrics keep their
+    /// numbers without the task.
     public func deleteTask(_ taskID: Int64) async throws {
         try await ownerDatabase.write { db in
             guard try TaskRecord.exists(db, key: taskID) else { throw TaskDeletionError.notFound }
             let sessions = try SessionRow.filter(Column("taskID") == taskID).fetchAll(db)
             if try sessions.contains(where: { try !$0.session().hasEnded }) { throw TaskDeletionError.inRunningSession }
+            try db.execute(sql: "UPDATE reportedAgent SET linkedByOwner = 0 WHERE taskId = ?", arguments: [taskID])
+            try db.execute(sql: "DELETE FROM \(PlanRunRow.databaseTableName) WHERE taskId = ?", arguments: [taskID])
             try DayBlockRow.filter(Column("taskId") == taskID).deleteAll(db)
+            // The task first: its wrap-ups go with it, and they refer to the sessions.
             try TaskRecord.deleteOne(db, key: taskID)
             try SessionRow.filter(Column("taskID") == taskID).deleteAll(db)
             try db.execute(sql: "UPDATE \(PilotEventRow.databaseTableName) SET taskId = NULL WHERE taskId = ?", arguments: [taskID])
