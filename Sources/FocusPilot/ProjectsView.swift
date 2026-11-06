@@ -90,7 +90,7 @@ struct ProjectsView: View {
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
                          selection: $taskSelection, delete: { deleting = $0 })
                     .taskInspector(model: model, items: model.projectItems, selection: $taskSelection,
-                                   showReviewQueue: showReviewQueue)
+                                   showReviewQueue: showReviewQueue, delete: { deleting = $0 })
                     .confirmsTaskDeletion(of: $deleting, in: model.projectItems, model: model)
             }
         } else if model.projects.isEmpty {

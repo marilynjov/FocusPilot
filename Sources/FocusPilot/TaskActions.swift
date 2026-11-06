@@ -44,8 +44,8 @@ struct TaskCommands: Commands {
             item("Move Up", .up, KeyboardShortcut(.upArrow, modifiers: [.command, .option]))
             item("Move Down", .down, KeyboardShortcut(.downArrow, modifiers: [.command, .option]))
             Divider()
-            // No shortcut: ⌘⌫ also deletes to the start of a line in text fields.
-            Button("Delete Task…") { actions?.delete?() }
+            Button("Delete Task…", action: deleteOrEditText)
+                .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(actions?.delete == nil)
         }
     }
@@ -77,6 +77,17 @@ struct TaskCommands: Commands {
         }
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(session == nil)
+    }
+
+    /// ⌘⌫ also deletes to the start of a line, and the menu sees it first:
+    /// while the owner is typing it stays that. It never asks over a sheet.
+    private func deleteOrEditText() {
+        guard let window = NSApp.keyWindow else { return }
+        if let field = window.firstResponder as? NSTextView, field.isEditable {
+            field.deleteToBeginningOfLine(nil)
+        } else if window.attachedSheet == nil, window.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true {
+            actions?.delete?()
+        }
     }
 
     private func item(_ title: String, _ move: TaskActions.Move, _ shortcut: KeyboardShortcut) -> some View {

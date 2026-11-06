@@ -19,6 +19,7 @@ struct PlanningView: View {
     @State private var isCapturing = false
     @State private var todaySelection: Int64?
     @State private var deletingTask: Int64?
+    @FocusState private var isNowCardFocused: Bool
     @Environment(\.palette) private var palette
 
     init(model: AppModel, page: Page = .today) {
@@ -187,12 +188,16 @@ struct PlanningView: View {
                     let now = TaskSections(model.today).now
                     let isSelected = now != nil && todaySelection == now?.id
                     NowCard(item: now, caption: nil, showsProject: true, now: context.date,
-                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected)
+                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected || isNowCardFocused)
                         .contentShape(Rectangle())
                         .onTapGesture { todaySelection = now?.id }
                         // Reachable without a pointer: Return selects it, and
                         // VoiceOver offers the same.
+                        // The card's rounded outline shows focus, not the
+                        // system's square ring (owner feedback, 2026-11-06).
                         .focusable(now != nil)
+                        .focusEffectDisabled()
+                        .focused($isNowCardFocused)
                         .onKeyPress(.return) {
                             guard let now else { return .ignored }
                             todaySelection = now.id
@@ -215,7 +220,7 @@ struct PlanningView: View {
                 }
                 .confirmsTaskDeletion(of: $deletingTask, in: model.today, model: model)
                 .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                               showReviewQueue: { page = .review })
+                               showReviewQueue: { page = .review }, delete: { deletingTask = $0 })
             }
         }
     }
@@ -265,12 +270,12 @@ extension View {
     /// it sits under whatever is above the list (the Quick timer on Today)
     /// and leaves the title bar whole (owner feedback, 2026-11-03).
     func taskInspector(model: AppModel, items: [TodayItem], selection: Binding<Int64?>,
-                       showReviewQueue: @escaping () -> Void) -> some View {
+                       showReviewQueue: @escaping () -> Void, delete: @escaping (Int64) -> Void) -> some View {
         HStack(spacing: 0) {
             self
             if let task = items.first(where: { $0.id == selection.wrappedValue }) {
                 Divider()
-                TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue)
+                TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue, delete: { delete(task.id) })
                     .frame(width: 300)
                     .frame(maxHeight: .infinity, alignment: .top)
             }
