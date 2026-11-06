@@ -18,6 +18,7 @@ struct PlanningView: View {
     @State private var page: Page?
     @State private var isCapturing = false
     @State private var todaySelection: Int64?
+    @State private var deletingTask: Int64?
     @Environment(\.palette) private var palette
 
     init(model: AppModel, page: Page = .today) {
@@ -45,6 +46,15 @@ struct PlanningView: View {
                 .background(palette.color(.bg))
                 // On Today the raccoon is inside the Now card instead; an
                 // empty Today has none, so it stays in the corner there.
+                // Why the last change to a task failed, whichever page made it.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let error = model.taskError {
+                        SettingsError(message: error)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 6)
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if raccoonSpot == .corner { RaccoonWindowView(model: model) }
                 }
@@ -189,6 +199,12 @@ struct PlanningView: View {
                             return .handled
                         }
                         .accessibilityAction(named: "Show Agent Panel") { todaySelection = now?.id }
+                        .contextMenu {
+                            if let now {
+                                Button("Delete Task…", role: .destructive) { deletingTask = now.id }
+                                    .disabled(model.snapshot.activeSession?.taskID == now.id)
+                            }
+                        }
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
                 .padding(.horizontal, 20)
@@ -197,6 +213,7 @@ struct PlanningView: View {
                     todayTasks
                     quickTimer
                 }
+                .confirmsTaskDeletion(of: $deletingTask, in: model.today, model: model)
                 .taskInspector(model: model, items: model.today, selection: $todaySelection,
                                showReviewQueue: { page = .review })
             }
@@ -222,12 +239,28 @@ struct PlanningView: View {
                      move: { id, status, placement in Task { await model.move(id, to: status, placement) } },
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
-                     selection: $todaySelection, showsNow: false)
+                     selection: $todaySelection, showsNow: false, delete: { deletingTask = $0 })
         }
     }
 }
 
 extension View {
+    /// The one confirmation before a task is deleted for good.
+    func confirmsTaskDeletion(of id: Binding<Int64?>, in items: [TodayItem], model: AppModel) -> some View {
+        let item = items.first { $0.id == id.wrappedValue }
+        return confirmationDialog(
+            "Delete “\(item?.title ?? "this task")”?",
+            isPresented: Binding(get: { id.wrappedValue != nil }, set: { if !$0 { id.wrappedValue = nil } })
+        ) {
+            Button("Delete Task", role: .destructive) {
+                if let taskID = id.wrappedValue { Task { await model.deleteTask(taskID) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This also removes its plan blocks, focus sessions and wrap-ups. It can’t be undone.")
+        }
+    }
+
     /// The selected task's Agent section in a column beside the list, shown
     /// while a task is selected. A plain column, not a window inspector, so
     /// it sits under whatever is above the list (the Quick timer on Today)

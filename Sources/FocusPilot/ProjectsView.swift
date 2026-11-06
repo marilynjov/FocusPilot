@@ -8,6 +8,7 @@ struct ProjectsView: View {
     var showReviewQueue: () -> Void = {}
     @State private var projectSelection: ProjectSummary.ID?
     @State private var taskSelection: Int64?
+    @State private var deleting: Int64?
     @State private var isImporting = false
 
     var body: some View {
@@ -87,9 +88,10 @@ struct ProjectsView: View {
                          move: { id, status, placement in Task { await model.move(id, to: status, placement) } },
                          undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
-                         selection: $taskSelection)
+                         selection: $taskSelection, delete: { deleting = $0 })
                     .taskInspector(model: model, items: model.projectItems, selection: $taskSelection,
                                    showReviewQueue: showReviewQueue)
+                    .confirmsTaskDeletion(of: $deleting, in: model.projectItems, model: model)
             }
         } else if model.projects.isEmpty {
             ContentUnavailableView("No projects yet", systemImage: "folder",

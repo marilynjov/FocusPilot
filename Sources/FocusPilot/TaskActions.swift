@@ -11,6 +11,8 @@ struct TaskActions {
     /// or the move would change nothing.
     let placement: (Move) -> (id: Int64, status: TaskStatus, placement: TaskPlacement)?
     let perform: (Move) -> Void
+    /// Asks to delete the selected task; nil if none is selected.
+    let delete: (() -> Void)?
 }
 
 extension FocusedValues {
@@ -41,6 +43,10 @@ struct TaskCommands: Commands {
             item("Move to Later", .later, KeyboardShortcut("3"))
             item("Move Up", .up, KeyboardShortcut(.upArrow, modifiers: [.command, .option]))
             item("Move Down", .down, KeyboardShortcut(.downArrow, modifiers: [.command, .option]))
+            Divider()
+            Button("Delete Task…") { actions?.delete?() }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(actions?.delete == nil)
         }
     }
 

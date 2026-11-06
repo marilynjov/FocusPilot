@@ -20,6 +20,8 @@ struct TaskList: View {
     @Binding var selection: Int64?
     /// False when the page shows the Now card itself, above the list.
     var showsNow = true
+    /// Asks to delete a task, after the owner confirms.
+    var delete: ((Int64) -> Void)?
     @Environment(AppModel.self) private var model: AppModel?
 
     var body: some View {
@@ -53,12 +55,20 @@ struct TaskList: View {
                         Divider()
                         Button("Undo Add from Herdr") { undoHerdrAdd(id) }
                     }
+                    if let delete {
+                        Divider()
+                        Button("Delete Task…", role: .destructive) { delete(id) }
+                            .disabled(id == activeSessionTaskID)
+                    }
                 }
             }
         }
         .focusedSceneValue(\.taskActions, TaskActions(
             placement: { action in selection.flatMap { placement(for: action, of: $0) } },
-            perform: { move in selection.map { perform(move, on: $0) } }
+            perform: { move in selection.map { perform(move, on: $0) } },
+            delete: selection.flatMap { id in
+                items.contains { $0.id == id } && id != activeSessionTaskID ? delete.map { delete in { delete(id) } } : nil
+            }
         ))
     }
 

@@ -359,6 +359,10 @@ final class AppModel {
         await perform("Could not link the workspace") { try await $0.linkProject(projectID, to: workspace, on: server) }
     }
 
+    func deleteTask(_ taskID: Int64) async {
+        await perform("Could not delete the task") { try await $0.deleteTask(taskID) }
+    }
+
     func undoHerdrAdd(_ taskID: Int64) async {
         await perform("Could not undo the task") { try await $0.undoHerdrAdd(taskID) }
     }

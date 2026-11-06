@@ -176,6 +176,15 @@ public actor FocusCoordinator {
         try await repository.unlinkProject(projectID)
     }
 
+    // MARK: Deleting tasks
+
+    /// Deletes a task for good, then looks at the plan again, since a block
+    /// that was due may be gone.
+    public func deleteTask(_ taskID: Int64) async throws {
+        try await repository.deleteTask(taskID)
+        await followPlanAfterAction()
+    }
+
     // MARK: Tasks from the focuspilot CLI
 
     /// The owner's undo of a task added from Herdr. The task a session is

@@ -111,6 +111,7 @@ struct AddToPlanSheet: View {
             }
             .formStyle(.grouped)
             SettingsError(message: model.dayPlanError)
+            SettingsError(message: model.taskError)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
