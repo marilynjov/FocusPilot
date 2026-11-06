@@ -18,6 +18,8 @@ struct PlanningView: View {
     @State private var page: Page?
     @State private var isCapturing = false
     @State private var todaySelection: Int64?
+    @State private var deletingTask: Int64?
+    @FocusState private var isNowCardFocused: Bool
     @Environment(\.palette) private var palette
 
     init(model: AppModel, page: Page = .today) {
@@ -43,6 +45,15 @@ struct PlanningView: View {
                 // and forms show it instead of drawing their own.
                 .scrollContentBackground(.hidden)
                 .background(palette.color(.bg))
+                // Why the last change to a task failed, whichever page made it.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let error = model.taskError {
+                        SettingsError(message: error)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 6)
+                    }
+                }
                 // On Today the raccoon is inside the Now card instead; an
                 // empty Today has none, so it stays in the corner there.
                 .overlay(alignment: .bottomTrailing) {
@@ -177,18 +188,28 @@ struct PlanningView: View {
                     let now = TaskSections(model.today).now
                     let isSelected = now != nil && todaySelection == now?.id
                     NowCard(item: now, caption: nil, showsProject: true, now: context.date,
-                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected)
+                            showsRaccoon: raccoonSpot == .nowCard, isSelected: isSelected || isNowCardFocused)
                         .contentShape(Rectangle())
                         .onTapGesture { todaySelection = now?.id }
                         // Reachable without a pointer: Return selects it, and
                         // VoiceOver offers the same.
+                        // The card's rounded outline shows focus, not the
+                        // system's square ring (owner feedback, 2026-11-06).
                         .focusable(now != nil)
+                        .focusEffectDisabled()
+                        .focused($isNowCardFocused)
                         .onKeyPress(.return) {
                             guard let now else { return .ignored }
                             todaySelection = now.id
                             return .handled
                         }
                         .accessibilityAction(named: "Show Agent Panel") { todaySelection = now?.id }
+                        .contextMenu {
+                            if let now {
+                                Button("Delete Task…", role: .destructive) { deletingTask = now.id }
+                                    .disabled(model.snapshot.activeSession?.taskID == now.id)
+                            }
+                        }
                         .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
                 .padding(.horizontal, 20)
@@ -197,8 +218,9 @@ struct PlanningView: View {
                     todayTasks
                     quickTimer
                 }
+                .confirmsTaskDeletion(of: $deletingTask, in: model.today, model: model)
                 .taskInspector(model: model, items: model.today, selection: $todaySelection,
-                               showReviewQueue: { page = .review })
+                               showReviewQueue: { page = .review }, delete: { deletingTask = $0 })
             }
         }
     }
@@ -222,23 +244,38 @@ struct PlanningView: View {
                      move: { id, status, placement in Task { await model.move(id, to: status, placement) } },
                      undoHerdrAdd: { id in Task { await model.undoHerdrAdd(id) } },
                      activeSessionTaskID: model.snapshot.activeSession?.taskID,
-                     selection: $todaySelection, showsNow: false)
+                     selection: $todaySelection, showsNow: false, delete: { deletingTask = $0 })
         }
     }
 }
 
 extension View {
+    /// The one confirmation before a task is deleted for good.
+    func confirmsTaskDeletion(of id: Binding<Int64?>, in items: [TodayItem], model: AppModel) -> some View {
+        let item = items.first { $0.id == id.wrappedValue }
+        return confirmationDialog(
+            "Delete “\(item?.title ?? "this task")”?",
+            isPresented: Binding(get: { id.wrappedValue != nil }, set: { if !$0 { id.wrappedValue = nil } }),
+            presenting: id.wrappedValue
+        ) { taskID in
+            Button("Delete Task", role: .destructive) { Task { await model.deleteTask(taskID) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This also removes its plan blocks, focus sessions, wrap-ups, Review queue results and agent links. It can’t be undone.")
+        }
+    }
+
     /// The selected task's Agent section in a column beside the list, shown
     /// while a task is selected. A plain column, not a window inspector, so
     /// it sits under whatever is above the list (the Quick timer on Today)
     /// and leaves the title bar whole (owner feedback, 2026-11-03).
     func taskInspector(model: AppModel, items: [TodayItem], selection: Binding<Int64?>,
-                       showReviewQueue: @escaping () -> Void) -> some View {
+                       showReviewQueue: @escaping () -> Void, delete: @escaping (Int64) -> Void) -> some View {
         HStack(spacing: 0) {
             self
             if let task = items.first(where: { $0.id == selection.wrappedValue }) {
                 Divider()
-                TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue)
+                TaskAgentInspector(model: model, task: task, showReviewQueue: showReviewQueue, delete: { delete(task.id) })
                     .frame(width: 300)
                     .frame(maxHeight: .infinity, alignment: .top)
             }

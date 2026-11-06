@@ -11,6 +11,8 @@ struct TaskActions {
     /// or the move would change nothing.
     let placement: (Move) -> (id: Int64, status: TaskStatus, placement: TaskPlacement)?
     let perform: (Move) -> Void
+    /// Asks to delete the selected task; nil if none is selected.
+    let delete: (() -> Void)?
 }
 
 extension FocusedValues {
@@ -41,6 +43,10 @@ struct TaskCommands: Commands {
             item("Move to Later", .later, KeyboardShortcut("3"))
             item("Move Up", .up, KeyboardShortcut(.upArrow, modifiers: [.command, .option]))
             item("Move Down", .down, KeyboardShortcut(.downArrow, modifiers: [.command, .option]))
+            Divider()
+            Button("Delete Task…", action: deleteOrEditText)
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(actions?.delete == nil)
         }
     }
 
@@ -71,6 +77,17 @@ struct TaskCommands: Commands {
         }
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(session == nil)
+    }
+
+    /// ⌘⌫ also deletes to the start of a line, and the menu sees it first:
+    /// while the owner is typing it stays that. It never asks over a sheet.
+    private func deleteOrEditText() {
+        guard let window = NSApp.keyWindow else { return }
+        if let field = window.firstResponder as? NSTextView, field.isEditable {
+            field.deleteToBeginningOfLine(nil)
+        } else if window.attachedSheet == nil, window.identifier?.rawValue.hasPrefix(PlanningView.windowID) == true {
+            actions?.delete?()
+        }
     }
 
     private func item(_ title: String, _ move: TaskActions.Move, _ shortcut: KeyboardShortcut) -> some View {

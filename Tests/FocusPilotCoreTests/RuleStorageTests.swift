@@ -161,6 +161,7 @@ struct RuleStorageTests {
     }
 
     @Test func ruleEditsShareTheRevisionCounterWithSessions() async throws {
+        _ = try await repository.addTask(title: "Write the essay")
         let session = FocusSession.sample(phase: .running)
         _ = try await repository.record(FocusTransition(session: session, effects: [.persist(session), .publishPolicy(nil)]))
 

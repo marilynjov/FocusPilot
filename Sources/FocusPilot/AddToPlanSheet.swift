@@ -111,6 +111,7 @@ struct AddToPlanSheet: View {
             }
             .formStyle(.grouped)
             SettingsError(message: model.dayPlanError)
+            SettingsError(message: model.taskError)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -122,7 +123,10 @@ struct AddToPlanSheet: View {
         }
         .padding(20)
         .frame(width: 460)
-        .onAppear { model.dayPlanError = nil }
+        .onAppear {
+            model.dayPlanError = nil
+            model.clearTaskError()
+        }
         .onChange(of: text) {
             capture.setText(text, now: .now, timeZone: .current, isKnownWord: SpellingDictionary.isKnown)
         }

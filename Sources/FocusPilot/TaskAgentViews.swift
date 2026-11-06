@@ -9,6 +9,8 @@ struct TaskAgentInspector: View {
     let model: AppModel
     let task: TodayItem
     var showReviewQueue: () -> Void
+    /// Asks to delete this task, after the owner confirms.
+    var delete: () -> Void
     @State private var isLinking = false
 
     private var links: [TaskAgentLink] { model.agentLinks.filter { $0.taskID == task.id } }
@@ -59,6 +61,17 @@ struct TaskAgentInspector: View {
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Divider()
+                // Where to find deleting, and its shortcut (owner feedback, 2026-11-06).
+                let isInSession = model.snapshot.activeSession?.taskID == task.id
+                Button("Delete Task…", systemImage: "trash", role: .destructive, action: delete)
+                    .buttonStyle(.borderless)
+                    .disabled(isInSession)
+                    .help(isInSession ? "Complete the focus session first" : "Delete this task (⌘⌫)")
+                Text(isInSession ? "Complete the focus session on this task to delete it." : "Or press ⌘⌫ with the task selected.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)

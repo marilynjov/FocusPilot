@@ -359,6 +359,18 @@ final class AppModel {
         await perform("Could not link the workspace") { try await $0.linkProject(projectID, to: workspace, on: server) }
     }
 
+    func deleteTask(_ taskID: Int64) async {
+        await perform("Could not delete the task") { try await $0.deleteTask(taskID) }
+        if wrapUp?.prompt.session.taskID == taskID { wrapUp = nil }
+        // Its blocks went too; the first free hour depends on them.
+        if dayPlan != nil { await loadDayPlan() }
+    }
+
+    /// For a sheet opening fresh: an older failure isn't about it.
+    func clearTaskError() {
+        taskError = nil
+    }
+
     func undoHerdrAdd(_ taskID: Int64) async {
         await perform("Could not undo the task") { try await $0.undoHerdrAdd(taskID) }
     }
@@ -423,6 +435,7 @@ final class AppModel {
 
     private func perform(_ failure: String, _ change: (FocusCoordinator) async throws -> Void) async {
         guard let coordinator else { return }
+        taskError = nil
         do {
             try await change(coordinator)
         } catch {
