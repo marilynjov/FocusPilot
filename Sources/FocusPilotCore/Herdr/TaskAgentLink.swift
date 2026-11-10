@@ -97,6 +97,11 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     public var source: AgentSource? = nil
     /// A reported agent's result: Ready or Failed.
     public var agentState: ReportedAgentState? = nil
+    /// When the owner first opened it in the Review queue; nil while it is
+    /// unread (owner request, 2026-11-10).
+    public var openedAt: Date? = nil
+
+    public var isUnread: Bool { openedAt == nil }
 }
 
 /// An item just queued, whose output is still to be read from `paneID`.

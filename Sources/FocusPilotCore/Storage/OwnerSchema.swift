@@ -356,6 +356,13 @@ enum OwnerSchema {
             try db.create(index: "herdrReviewItem_on_reportedAgentId", on: ReviewItemRow.databaseTableName,
                           columns: ["reportedAgentId"])
         }
+        migrator.registerMigration("owner-v16-review-opened") { db in
+            // When the owner first opened a Review queue item; nil while it
+            // is unread (decision 0004, 2026-11-10).
+            try db.alter(table: ReviewItemRow.databaseTableName) { table in
+                table.add(column: "openedAt", .datetime)
+            }
+        }
         return migrator
     }
 

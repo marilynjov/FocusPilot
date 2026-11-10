@@ -216,6 +216,22 @@ struct HerdrAgentStorageTests {
         #expect(try await repository.reviewQueue().isEmpty)
     }
 
+    @Test func anItemIsUnreadUntilFirstOpened() async throws {
+        let taskID = try await task()
+        _ = try await link(agent(.working), to: taskID)
+        let item = try #require(try await repository.recordAgents([agent(.idle)], on: herdrServer).first)
+        #expect(try await repository.reviewQueue().first?.isUnread == true)
+
+        try await repository.markOpened(item.id)
+        clock.set(clock.now + 60)
+        try await repository.markOpened(item.id)
+
+        // Opened once, it stays on the queue as read, keeping the first time.
+        let opened = try #require(try await repository.reviewQueue().first)
+        #expect(!opened.isUnread)
+        #expect(opened.openedAt == wednesdayMorningInBogota)
+    }
+
     @Test func theQueueIsNewestFirst() async throws {
         let first = try await task("Explain baseline results")
         let second = try await task("PhD shortlist")
@@ -287,5 +303,28 @@ struct AgentLinkStateTests {
     @Test func withoutHerdrNothingIsKnown() {
         #expect(AgentLinkState(link, .disconnected(.notRunning)) == .unknown)
         #expect(AgentLinkState(link, nil) == .unknown)
+    }
+}
+
+@Suite("Owner schema migration to v16")
+struct OwnerMigrationV16Tests {
+    @Test func resultsQueuedBeforeTheMigrationAreUnread() async throws {
+        let location = StorageLocation(directory: try makeTemporaryDirectory())
+        let oldDatabase = try DatabaseQueue(path: location.ownerDatabaseURL.path)
+        try OwnerSchema.migrator.migrate(oldDatabase, upTo: "owner-v15-reported-agents")
+        try await oldDatabase.write { db in
+            try db.execute(sql: "INSERT INTO task (title) VALUES ('Explain baseline results')")
+            try db.execute(sql: """
+                INSERT INTO herdrReviewItem (taskId, kind, occurredAt, agentLabel)
+                VALUES (1, 'finished', '2026-11-10 14:00:00.000', 'ablation')
+                """)
+        }
+        try oldDatabase.close()
+
+        let repository = try TaskRepository(location: location)
+
+        let item = try #require(try await repository.reviewQueue().first)
+        #expect(item.isUnread)
+        #expect(item.agentLabel == "ablation")
     }
 }

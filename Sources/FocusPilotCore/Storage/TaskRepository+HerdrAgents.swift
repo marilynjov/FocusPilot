@@ -55,4 +55,11 @@ extension TaskRepository {
         let reviewedAt = now()
         try await ownerDatabase.write { db in try HerdrAgentStore.markReviewed(id, at: reviewedAt, in: db) }
     }
+
+    /// The owner opened the item in the Review queue: it is no longer
+    /// unread. Only the first opening is kept.
+    public func markOpened(_ id: Int64) async throws {
+        let openedAt = now()
+        try await ownerDatabase.write { db in try HerdrAgentStore.markOpened(id, at: openedAt, in: db) }
+    }
 }

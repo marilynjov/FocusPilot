@@ -26,6 +26,20 @@ extension AppModel {
     /// Results waiting for the next break.
     var heldReviewCount: Int { allReviewItems.count - reviewItems.count }
 
+    /// The raccoon's note for shown results the owner hasn't opened yet,
+    /// naming the newest one's agent; held results don't count.
+    var raccoonUnreadNote: String? {
+        let unread = reviewItems.filter(\.isUnread)
+        return RaccoonPresence.unreadNote(count: unread.count, newestLabel: unread.first?.agentLabel)
+    }
+
+    /// Clicking the raccoon's unread note: the Review queue, in the
+    /// planning window brought forward.
+    func openReviewQueue() {
+        requestedPage = .review
+        planningWindowRequests += 1
+    }
+
     /// A break in the session ended: what was shown during it stays shown.
     func noteReviewRelease(from old: FocusSession?, to new: FocusSession?) {
         guard let old, case .onBreak = old.phase, new?.id == old.id else { return }

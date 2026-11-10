@@ -31,8 +31,12 @@ final class RaccoonCompanionController {
     private var art: RaccoonArt?
     private var artError: String?
     private var shown: RaccoonPresence?
-    /// Whether the pointer is over the floating raccoon or its bubble.
-    private var isHovered = false
+    /// What the pointer is over: the floating raccoon, its bubble, or neither.
+    private var hovered: RaccoonPanel.Part?
+    private var isHovered: Bool { hovered != nil }
+    /// Whether the bubble shows the unread note, so a click on it opens the
+    /// Review queue.
+    private var isShowingNote = false
     /// Ticks the time in the hover bubble while the pointer is over the
     /// raccoon.
     private var hoverTimer: Timer?
@@ -90,8 +94,14 @@ final class RaccoonCompanionController {
     /// Shows, changes or hides the raccoon for the current mode and session.
     func update() {
         let presence = RaccoonPresence.resolve(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
-                                               isWindowOpen: model.raccoonIsInWindow, peek: model.raccoonPeek)
+                                               isWindowOpen: model.raccoonIsInWindow, peek: model.raccoonPeek,
+                                               note: model.raccoonUnreadNote)
         guard presence != shown || (presence != nil && panel == nil) else { return }
+        // Only the note changed: the pose keeps its motion.
+        if let presence, let old = shown, panel != nil, presence.poseID == old.poseID, presence.message == old.message {
+            shown = presence
+            return refreshBubble()
+        }
         shown = presence
         if let presence { show(presence) } else { hide() }
     }
@@ -185,17 +195,23 @@ final class RaccoonCompanionController {
         panel?.orderOut(nil)
         panel = nil
         stage = nil
-        setHovered(false)
+        setHovered(nil)
         model.focusPanel.update()
     }
 
     /// A peek's message and buttons, else the time and task while the
-    /// pointer is over the raccoon (owner request, 2026-11-02), else no bubble.
+    /// pointer is over the raccoon (owner request, 2026-11-02), else the
+    /// unread note (owner request, 2026-11-10), else no bubble. Over the
+    /// note itself the note stays, so it can be clicked.
     private func refreshBubble() {
-        let message = shown?.message ?? (isHovered ? hoverText : nil)
+        let showsTime = hovered == .raccoon || (hovered == .bubble && shown?.note == nil)
+        let time = shown?.message == nil && showsTime ? hoverText : nil
+        let message = shown?.message ?? time ?? shown?.note
+        isShowingNote = shown?.message == nil && time == nil && message != nil
         let actions = shown?.message != nil ? model.raccoonPeek?.actions ?? [] : []
         if stage?.bubbleMessage != message || stage?.bubbleActions != actions {
-            let toolTip = model.raccoonPeek == nil ? "Click to show the focus panel"
+            let toolTip = isShowingNote ? "Click to open the Review queue"
+                : model.raccoonPeek == nil ? "Click to show the focus panel"
                 : actions.isEmpty ? "Click to dismiss" : "Click the message to dismiss"
             stage?.setBubble(message, actions: actions, toolTip: toolTip)
         }
@@ -203,14 +219,14 @@ final class RaccoonCompanionController {
 
     /// Follows the pointer onto and off the raccoon, ticking the hover
     /// bubble's time once a second only while it is there.
-    private func setHovered(_ hovered: Bool) {
-        if hovered != isHovered, model.raccoonPeek != nil {
-            if hovered { holdPeekClock() } else { runPeekClock() }
+    private func setHovered(_ part: RaccoonPanel.Part?) {
+        if (part != nil) != isHovered, model.raccoonPeek != nil {
+            if part != nil { holdPeekClock() } else { runPeekClock() }
         }
-        isHovered = hovered
+        hovered = part
         hoverTimer?.invalidate()
         hoverTimer = nil
-        if hovered {
+        if part != nil {
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshBubble() }
             }
@@ -243,7 +259,13 @@ final class RaccoonCompanionController {
         let stage = RaccoonStageView(frameSize: frameSize, sideRoom: Self.sideRoom, pointsPerPixel: Self.pointsPerPixel)
         stage.onBubbleClick = { [weak self] in
             guard let self else { return }
-            if model.raccoonPeek != nil { endPeek() } else { toggleFocusPanel() }
+            if model.raccoonPeek != nil {
+                endPeek()
+            } else if isShowingNote {
+                model.openReviewQueue()
+            } else {
+                toggleFocusPanel()
+            }
         }
         stage.onRaccoonClick = { [weak self] in self?.toggleFocusPanel() }
         stage.onBubbleAction = { [weak self] action in self?.model.performRaccoonAction(action) }
@@ -263,9 +285,9 @@ final class RaccoonCompanionController {
         panel.animationBehavior = .none
         panel.contentView = stage
         self.stage = stage
-        panel.followMouse { [weak self] hovered in
+        panel.followMouse { [weak self] part in
             guard let self else { return }
-            setHovered(hovered)
+            setHovered(part)
             refreshBubble()
         }
         return panel
@@ -305,6 +327,11 @@ extension NSScreen {
 /// A panel that never becomes key or main, and lets clicks through except
 /// over the speech bubble.
 final class RaccoonPanel: NSPanel {
+    /// The parts of the panel that take the pointer.
+    enum Part {
+        case raccoon, bubble
+    }
+
     /// Within this distance of the panel the pointer is polled quickly, so
     /// the raccoon takes the mouse in time; farther away, slowly, so App Nap
     /// can still save power.
@@ -313,20 +340,20 @@ final class RaccoonPanel: NSPanel {
     private static let farInterval: TimeInterval = 0.25
 
     private var mouseTimer: Timer?
-    private var onHover: (@MainActor (Bool) -> Void)?
-    private var isHovered = false
+    private var onHover: (@MainActor (Part?) -> Void)?
+    private var hovered: Part?
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     /// Takes the mouse only while it is over the raccoon or its bubble, and
-    /// reports `hovered` when that changes. Polled, since an ignoring window
-    /// gets no events; nil stops.
-    func followMouse(_ hovered: (@MainActor (Bool) -> Void)?) {
+    /// reports which, or nil, when that changes. Polled, since an ignoring
+    /// window gets no events; nil stops.
+    func followMouse(_ hovered: (@MainActor (Part?) -> Void)?) {
         mouseTimer?.invalidate()
         mouseTimer = nil
         ignoresMouseEvents = true
-        isHovered = false
+        self.hovered = nil
         onHover = hovered
         guard hovered != nil else { return }
         poll(every: Self.farInterval)
@@ -343,10 +370,10 @@ final class RaccoonPanel: NSPanel {
     }
 
     private func checkMouse() {
-        let over = isMouseOverContent
-        ignoresMouseEvents = !over
-        if over != isHovered {
-            isHovered = over
+        let over = partUnderMouse
+        ignoresMouseEvents = over == nil
+        if over != hovered {
+            hovered = over
             onHover?(over)
         }
         let isNear = frame.insetBy(dx: -Self.nearDistance, dy: -Self.nearDistance).contains(NSEvent.mouseLocation)
@@ -354,12 +381,13 @@ final class RaccoonPanel: NSPanel {
         if mouseTimer?.timeInterval != interval { poll(every: interval) }
     }
 
-    private var isMouseOverContent: Bool {
-        guard let stage = contentView as? RaccoonStageView else { return false }
+    /// The bubble first: it is drawn over the raccoon.
+    private var partUnderMouse: Part? {
+        guard let stage = contentView as? RaccoonStageView else { return nil }
         let mouse = NSEvent.mouseLocation
-        return [stage.raccoonHitFrame, stage.bubbleFrame].compactMap(\.self).contains {
-            convertToScreen(stage.convert($0, to: nil)).contains(mouse)
-        }
+        let contains = { (frame: NSRect) in self.convertToScreen(stage.convert(frame, to: nil)).contains(mouse) }
+        if let bubble = stage.bubbleFrame, contains(bubble) { return .bubble }
+        return contains(stage.raccoonHitFrame) ? .raccoon : nil
     }
 }
 
@@ -779,7 +807,7 @@ struct RaccoonWindowView: View {
     var body: some View {
         if model.raccoonIsInWindow,
            let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
-                                                   peek: model.raccoonPeek),
+                                                   peek: model.raccoonPeek, note: model.raccoonUnreadNote),
            let art = model.raccoon.loadArt() {
             let raccoon = RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)
@@ -789,8 +817,9 @@ struct RaccoonWindowView: View {
                     // Trailing-aligned, so a long tag grows to the left and
                     // stays inside the card.
                     raccoon.overlay(alignment: .topTrailing) {
-                        if let message = presence.message {
-                            RaccoonWindowBubble(message: message, actions: cardlessActions, model: model, isCompact: true)
+                        if let message = presence.message ?? presence.note {
+                            RaccoonWindowBubble(message: message, actions: presence.message != nil ? cardlessActions : [],
+                                                model: model, isCompact: true, isNote: presence.message == nil)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: RaccoonWindowBubble.compactMaxWidth, alignment: .trailing)
                                 .fixedSize(horizontal: true, vertical: false)
@@ -801,6 +830,8 @@ struct RaccoonWindowView: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         if let message = presence.message {
                             RaccoonWindowBubble(message: message, actions: model.raccoonPeek?.actions ?? [], model: model)
+                        } else if let note = presence.note {
+                            RaccoonWindowBubble(message: note, actions: [], model: model, isNote: true)
                         }
                         raccoon
                     }
@@ -826,7 +857,8 @@ extension RaccoonWindowView {
 
 /// A peek's speech bubble inside the planning window (owner request,
 /// 2026-11-03): the message and the peek's buttons, which run the same
-/// commands as the floating bubble's. Clicking the message dismisses it.
+/// commands as the floating bubble's. Clicking the message dismisses it;
+/// clicking the unread note opens the Review queue (2026-11-10).
 private struct RaccoonWindowBubble: View {
     /// The Now card's tag never grows wider than this: its text stays on
     /// one line and truncates; any buttons sit in a row below the text.
@@ -837,6 +869,8 @@ private struct RaccoonWindowBubble: View {
     let model: AppModel
     /// A one-line tag: smaller text and padding, no fixed width.
     var isCompact = false
+    /// The unread note rather than a peek.
+    var isNote = false
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -849,10 +883,11 @@ private struct RaccoonWindowBubble: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture { model.raccoon.endPeek() }
-                .help(actions.isEmpty ? "Click to dismiss" : "Click the message to dismiss")
+                .onTapGesture { if isNote { model.requestedPage = .review } else { model.raccoon.endPeek() } }
+                .help(isNote ? "Click to open the Review queue"
+                      : actions.isEmpty ? "Click to dismiss" : "Click the message to dismiss")
                 .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Dismisses the raccoon’s reminder")
+                .accessibilityHint(isNote ? "Opens the Review queue" : "Dismisses the raccoon’s reminder")
             if !actions.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(actions, id: \.self) { action in

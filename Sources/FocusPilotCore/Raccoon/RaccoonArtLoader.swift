@@ -275,10 +275,24 @@ public struct RaccoonPresence: Equatable, Sendable {
 
     public var poseID: String
     public var message: String?
+    /// The unread results note (`unreadNote`), kept above the raccoon's
+    /// head while it is out for the task and no peek speaks.
+    public var note: String?
 
-    public init(poseID: String, message: String? = nil) {
+    public init(poseID: String, message: String? = nil, note: String? = nil) {
         self.poseID = poseID
         self.message = message
+        self.note = note
+    }
+
+    /// "2 unread · Claude Code · Bowling", naming the newest unread result's
+    /// agent; nil when nothing is unread (owner request, 2026-11-10).
+    public static func unreadNote(count: Int, newestLabel: String?) -> String? {
+        guard count > 0 else { return nil }
+        guard let label = newestLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty else {
+            return "\(count) unread"
+        }
+        return "\(count) unread · \(label)"
     }
 
     /// The floating window: the task's pose while a session is under way
@@ -286,8 +300,10 @@ public struct RaccoonPresence: Equatable, Sendable {
     /// instead); a peek replaces that while it lasts. Peeks-in mode shows
     /// only peeks. While the window is in front it shows nothing, peeks
     /// included: they show in the window (owner request, 2026-11-03).
+    /// In On screen mode the task's pose carries `note`, the unread results
+    /// note; a peek replaces it while it lasts.
     public static func resolve(mode: RaccoonCompanionMode, activity: RaccoonActivity?, isWindowOpen: Bool,
-                               peek: RaccoonPeek?) -> RaccoonPresence? {
+                               peek: RaccoonPeek?, note: String? = nil) -> RaccoonPresence? {
         guard !isWindowOpen else { return nil }
         switch mode {
         case .off:
@@ -296,7 +312,7 @@ public struct RaccoonPresence: Equatable, Sendable {
             return peek.map { RaccoonPresence(poseID: $0.poseID, message: $0.message) }
         case .staysOnScreen:
             if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
-            return activity.map { RaccoonPresence(poseID: $0.poseID) }
+            return activity.map { RaccoonPresence(poseID: $0.poseID, note: note) }
         }
     }
 
@@ -316,12 +332,13 @@ public struct RaccoonPresence: Equatable, Sendable {
     /// The planning window while it is in front: a peek, with its bubble,
     /// in On screen and Peeks-in modes, else in On screen mode the task's
     /// pose while a session is under way. The floating window then shows
-    /// nothing, so there is only ever one raccoon.
+    /// nothing, so there is only ever one raccoon. The task's pose carries
+    /// `note`, as on screen.
     public static func inWindow(mode: RaccoonCompanionMode, activity: RaccoonActivity?,
-                                peek: RaccoonPeek? = nil) -> RaccoonPresence? {
+                                peek: RaccoonPeek? = nil, note: String? = nil) -> RaccoonPresence? {
         guard mode != .off else { return nil }
         if let peek { return RaccoonPresence(poseID: peek.poseID, message: peek.message) }
         guard mode == .staysOnScreen, let activity else { return nil }
-        return RaccoonPresence(poseID: activity.poseID)
+        return RaccoonPresence(poseID: activity.poseID, note: note)
     }
 }

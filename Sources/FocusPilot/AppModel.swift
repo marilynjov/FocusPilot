@@ -22,7 +22,10 @@ final class AppModel {
     private(set) var herdrAgents: HerdrAgents?
     private(set) var agentLinks: [TaskAgentLink] = []
     /// The whole Review queue; `reviewItems` leaves out what waits for a break.
-    private(set) var allReviewItems: [ReviewItem] = []
+    /// The raccoon's unread note follows it.
+    private(set) var allReviewItems: [ReviewItem] = [] {
+        didSet { if allReviewItems != oldValue { raccoon.update() } }
+    }
     /// Agents that report to FocusPilot themselves (decision 0005); see
     /// `AppModel+ReportedAgents.swift`.
     private(set) var reportedAgents: [ReportedAgent] = []
@@ -400,6 +403,13 @@ final class AppModel {
 
     func markReviewed(_ itemID: Int64) async {
         await perform("Could not mark the result reviewed") { try await $0.markReviewed(itemID) }
+    }
+
+    /// The owner selected the item in the Review queue: it is read from now
+    /// on. Opening a read item again writes nothing.
+    func markOpened(_ itemID: Int64) async {
+        guard allReviewItems.first(where: { $0.id == itemID })?.isUnread == true else { return }
+        await perform("Could not mark the result read") { try await $0.markOpened(itemID) }
     }
 
     /// The owner clicked Open agent: focuses that agent's pane in Herdr.
