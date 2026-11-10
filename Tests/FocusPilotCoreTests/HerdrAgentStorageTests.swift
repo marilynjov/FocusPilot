@@ -238,9 +238,16 @@ struct HerdrAgentStorageTests {
         _ = try await repository.recordAgents([agent(.idle)], on: herdrServer)
         clock.set(clock.now + 60)
         _ = try await repository.recordAgents([agent(.working)], on: herdrServer)
-        _ = try await repository.recordAgents([agent(.idle)], on: herdrServer)
+        let newest = try #require(try await repository.recordAgents([agent(.idle)], on: herdrServer).first)
+        #expect(ReviewItem.markingSuperseded(try await repository.reviewQueue()).map(\.isUnread) == [true, false])
 
-        #expect(try await repository.reviewQueue().map(\.isUnread) == [true, false])
+        // Reviewing the newest makes the older one the newest: unread again
+        // unless the owner opened it while it showed as read.
+        let older = try #require(try await repository.reviewQueue().last)
+        try await repository.markReviewed(newest.id)
+        #expect(ReviewItem.markingSuperseded(try await repository.reviewQueue()).map(\.isUnread) == [true])
+        try await repository.markOpened(older.id)
+        #expect(ReviewItem.markingSuperseded(try await repository.reviewQueue()).map(\.isUnread) == [false])
     }
 
     @Test func theQueueIsNewestFirst() async throws {

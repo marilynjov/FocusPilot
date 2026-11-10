@@ -406,10 +406,11 @@ final class AppModel {
     }
 
     /// The owner selected the item in the Review queue: it is read from now
-    /// on. Opening a read item again writes nothing. Only that item changes,
+    /// on, even an older result already shown as read, so it stays read once
+    /// the newer one is reviewed. Opening an opened item again writes nothing. Only that item changes,
     /// so it is updated in place rather than reloading everything.
     func markOpened(_ itemID: Int64) async {
-        guard let coordinator, allReviewItems.first(where: { $0.id == itemID })?.isUnread == true else { return }
+        guard let coordinator, allReviewItems.first(where: { $0.id == itemID })?.openedAt == nil else { return }
         do {
             try await coordinator.markOpened(itemID)
         } catch {

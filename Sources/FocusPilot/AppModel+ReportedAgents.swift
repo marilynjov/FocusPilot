@@ -15,12 +15,13 @@ extension AppModel {
     }
 
     /// The Review queue as shown: a reported agent's result waits while a
-    /// plan block runs, until its next break (D8).
+    /// plan block runs, until its next break (D8). Only each agent's newest
+    /// shown result is unread.
     var reviewItems: [ReviewItem] {
-        allReviewItems.filter {
+        ReviewItem.markingSuperseded(allReviewItems.filter {
             !ReviewHold.isHeld($0, session: snapshot.activeSession, planSession: snapshot.activePlanRun != nil,
                                releasedAt: reviewReleasedAt)
-        }
+        })
     }
 
     /// Results waiting for the next break.

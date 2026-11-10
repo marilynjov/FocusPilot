@@ -312,5 +312,9 @@ struct ReportedAgentTests {
             == "3 unread · bot")
         #expect(RaccoonPresence.unreadNote(for: [approval, opened], session: session(.running), planSession: true) == nil)
         #expect(RaccoonPresence.unreadNote(for: [held], session: session(.running), planSession: true) == nil)
+        // A newer result held for the break doesn't make the shown one read.
+        let shownBefore = item(at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        #expect(RaccoonPresence.unreadNote(for: [held, shownBefore], session: session(.running), planSession: true)
+            == "1 unread · bot")
     }
 }

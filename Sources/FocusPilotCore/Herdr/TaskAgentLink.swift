@@ -107,8 +107,10 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     public var isUnread: Bool { openedAt == nil && !isSuperseded }
 
     /// Marks every result but each agent's newest as superseded. `items`
-    /// are newest first, as the queue is. Approval requests are left alone:
-    /// each still needs an answer.
+    /// are newest first, as the queue is, and only those shown: a result
+    /// held for the next break supersedes nothing yet. Approval requests are
+    /// left alone: each still needs an answer. The agent is the same across
+    /// tasks.
     public static func markingSuperseded(_ items: [ReviewItem]) -> [ReviewItem] {
         var seen = Set<String>()
         return items.map { item in
@@ -120,7 +122,9 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     }
 
     /// The agent it came from: the reported agent or Herdr link, else its
-    /// label once the agent was forgotten or unlinked.
+    /// label once the agent was forgotten or unlinked. That fallback is
+    /// approximate: two unlinked agents with one label count as one, and a
+    /// relinked agent's older, unlinked results aren't superseded.
     private var agentKey: String {
         if let reportedAgentID { return "reported:\(reportedAgentID)" }
         if let linkID { return "link:\(linkID)" }

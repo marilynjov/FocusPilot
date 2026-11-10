@@ -300,10 +300,10 @@ public struct RaccoonPresence: Equatable, Sendable {
     /// break (`ReviewHold`).
     public static func unreadNote(for items: [ReviewItem], session: FocusSession?, planSession: Bool,
                                   releasedAt: Date? = nil) -> String? {
-        let unread = items.filter {
-            $0.isUnread && $0.kind != .approval
-                && !ReviewHold.isHeld($0, session: session, planSession: planSession, releasedAt: releasedAt)
+        let shown = items.filter {
+            !ReviewHold.isHeld($0, session: session, planSession: planSession, releasedAt: releasedAt)
         }
+        let unread = ReviewItem.markingSuperseded(shown).filter { $0.isUnread && $0.kind != .approval }
         return unreadNote(count: unread.count, newestLabel: unread.first?.agentLabel)
     }
 
