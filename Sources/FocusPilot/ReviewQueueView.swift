@@ -6,6 +6,10 @@ import SwiftUI
 /// (decision 0005), without changing Now or the task. Output is plain text,
 /// never executed or rendered as markup, and FocusPilot never answers an
 /// approval. A reported result waits while a plan block runs (D8).
+///
+/// An item stays Unread until the owner selects it here; nothing is
+/// selected for them, so only their own click marks it read (owner
+/// request, 2026-11-10).
 struct ReviewQueueView: View {
     let model: AppModel
     @State private var selection: ReviewItem.ID?
@@ -44,7 +48,9 @@ struct ReviewQueueView: View {
                 }
                 .frame(minWidth: 260, idealWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             }
-            .onAppear { selection = selection ?? model.reviewItems.first?.id }
+            .onChange(of: selection) {
+                if let selection { Task { await model.markOpened(selection) } }
+            }
         }
     }
 
@@ -55,10 +61,6 @@ struct ReviewQueueView: View {
 }
 
 extension ReviewItem {
-    var stateTitle: String {
-        kind == .approval ? "Needs your approval" : agentState == .failed ? "Failed" : "Ready"
-    }
-
     var timeTitle: String {
         let time = occurredAt.formatted(date: .omitted, time: .shortened)
         return kind == .approval ? "Waiting since \(time)" : agentState == .failed ? "Failed \(time)" : "Finished \(time)"
@@ -73,7 +75,8 @@ extension ReviewItem {
 }
 
 /// "ablation · NLP report → Explain baseline results", the time, one line of
-/// output, and Ready or Needs your approval.
+/// output, and Unread, Read or Needs your approval. An unread item has a
+/// bold name and a filled status dot; a read result's dot is hollow.
 struct AgentResultRow: View {
     let item: ReviewItem
 
@@ -82,7 +85,7 @@ struct AgentResultRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(verbatim: item.place)
-                        .fontWeight(.medium)
+                        .fontWeight(item.isUnread ? .bold : .medium)
                     Text(verbatim: "→ \(item.taskTitle)")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -97,7 +100,7 @@ struct AgentResultRow: View {
                 }
             }
             Spacer(minLength: 8)
-            StatusDot(title: item.stateTitle, role: item.stateRole, filled: true)
+            StatusDot(title: item.stateTitle, role: item.stateRole, filled: item.isUnread || item.stateRole == .blocked)
         }
         .padding(.vertical, 4)
         // One item for VoiceOver, without the arrow and middle dots.
@@ -116,7 +119,7 @@ struct AgentResultDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                StatusDot(title: item.stateTitle, role: item.stateRole, filled: true)
+                StatusDot(title: item.stateTitle, role: item.stateRole, filled: item.isUnread || item.stateRole == .blocked)
                 Text(verbatim: "\(item.place) · \(item.timeTitle.lowercased())")
                     .font(.callout)
                     .foregroundStyle(.secondary)

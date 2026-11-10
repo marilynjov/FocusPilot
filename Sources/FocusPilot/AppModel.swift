@@ -22,7 +22,10 @@ final class AppModel {
     private(set) var herdrAgents: HerdrAgents?
     private(set) var agentLinks: [TaskAgentLink] = []
     /// The whole Review queue; `reviewItems` leaves out what waits for a break.
-    private(set) var allReviewItems: [ReviewItem] = []
+    /// The raccoon's unread note follows it.
+    private(set) var allReviewItems: [ReviewItem] = [] {
+        didSet { if allReviewItems != oldValue { raccoon.update() } }
+    }
     /// Agents that report to FocusPilot themselves (decision 0005); see
     /// `AppModel+ReportedAgents.swift`.
     private(set) var reportedAgents: [ReportedAgent] = []
@@ -400,6 +403,25 @@ final class AppModel {
 
     func markReviewed(_ itemID: Int64) async {
         await perform("Could not mark the result reviewed") { try await $0.markReviewed(itemID) }
+    }
+
+    /// The owner selected the item in the Review queue: it is read from now
+    /// on, even an older result already shown as read, so it stays read once
+    /// the newer one is reviewed. Opening an opened item again writes nothing. Only that item changes,
+    /// so it is updated in place rather than reloading everything.
+    func markOpened(_ itemID: Int64) async {
+        guard let coordinator, allReviewItems.first(where: { $0.id == itemID })?.openedAt == nil else { return }
+        do {
+            try await coordinator.markOpened(itemID)
+        } catch {
+            taskError = "Could not mark the result read: \(error.localizedDescription)"
+            return
+        }
+        // The queue may have been reloaded meanwhile; the next refresh reads
+        // the stored time anyway.
+        if let index = allReviewItems.firstIndex(where: { $0.id == itemID }) {
+            allReviewItems[index].openedAt = .now
+        }
     }
 
     /// The owner clicked Open agent: focuses that agent's pane in Herdr.

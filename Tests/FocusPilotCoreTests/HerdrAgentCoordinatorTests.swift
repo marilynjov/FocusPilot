@@ -200,4 +200,15 @@ struct HerdrAgentCoordinatorTests {
 
         #expect(try await coordinator.reviewQueue().isEmpty)
     }
+
+    @Test func openingAnItemKeepsItQueuedAsRead() async throws {
+        _ = try await linkedTask()
+        herdr.set(.connected(herdrServer, [agent(.idle)]))
+        _ = await coordinator.refreshHerdrAgents()
+        let item = try #require(try await coordinator.reviewQueue().first)
+
+        try await coordinator.markOpened(item.id)
+
+        #expect(try await coordinator.reviewQueue().map(\.isUnread) == [false])
+    }
 }

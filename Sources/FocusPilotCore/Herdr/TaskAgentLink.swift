@@ -97,6 +97,47 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     public var source: AgentSource? = nil
     /// A reported agent's result: Ready or Failed.
     public var agentState: ReportedAgentState? = nil
+    /// When the owner first opened it in the Review queue; nil while it is
+    /// unread (owner request, 2026-11-10).
+    public var openedAt: Date? = nil
+    /// An older result from an agent that has reported again since. Only an
+    /// agent's newest result is unread (owner request, 2026-11-10).
+    public var isSuperseded = false
+
+    public var isUnread: Bool { openedAt == nil && !isSuperseded }
+
+    /// Marks every result but each agent's newest as superseded. `items`
+    /// are newest first, as the queue is, and only those shown: a result
+    /// held for the next break supersedes nothing yet. Approval requests are
+    /// left alone: each still needs an answer. The agent is the same across
+    /// tasks.
+    public static func markingSuperseded(_ items: [ReviewItem]) -> [ReviewItem] {
+        var seen = Set<String>()
+        return items.map { item in
+            guard item.kind != .approval else { return item }
+            var item = item
+            item.isSuperseded = !seen.insert(item.agentKey).inserted
+            return item
+        }
+    }
+
+    /// The agent it came from: the reported agent or Herdr link, else its
+    /// label once the agent was forgotten or unlinked. That fallback is
+    /// approximate: two unlinked agents with one label count as one, and a
+    /// relinked agent's older, unlinked results aren't superseded.
+    private var agentKey: String {
+        if let reportedAgentID { return "reported:\(reportedAgentID)" }
+        if let linkID { return "link:\(linkID)" }
+        return "label:\(agentLabel)"
+    }
+
+    /// Unread or Read for a result; an approval request or a failure keeps
+    /// its wording and adds Unread until opened (owner request, 2026-11-10).
+    public var stateTitle: String {
+        let state = kind == .approval ? "Needs your approval" : agentState == .failed ? "Failed" : nil
+        guard let state else { return isUnread ? "Unread" : "Read" }
+        return isUnread ? "\(state) · Unread" : state
+    }
 }
 
 /// An item just queued, whose output is still to be read from `paneID`.
