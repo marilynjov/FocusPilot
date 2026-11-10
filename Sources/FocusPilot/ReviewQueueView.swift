@@ -30,7 +30,10 @@ struct ReviewQueueView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(12)
                 }
-                .frame(minWidth: 380)
+                // Both columns give way: fixed widths left the page wider
+                // than the window, and the sidebar could not open it
+                // (owner report, 2026-11-10).
+                .frame(minWidth: 260, idealWidth: 380)
                 Divider()
                 Group {
                     if let item = model.reviewItems.first(where: { $0.id == selection }) {
@@ -39,8 +42,7 @@ struct ReviewQueueView: View {
                         ContentUnavailableView("Select a result", systemImage: "tray")
                     }
                 }
-                .frame(width: 380)
-                .frame(maxHeight: .infinity)
+                .frame(minWidth: 260, idealWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             }
             .onAppear { selection = selection ?? model.reviewItems.first?.id }
         }
