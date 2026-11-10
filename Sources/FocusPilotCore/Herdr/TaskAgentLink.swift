@@ -100,8 +100,32 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     /// When the owner first opened it in the Review queue; nil while it is
     /// unread (owner request, 2026-11-10).
     public var openedAt: Date? = nil
+    /// An older result from an agent that has reported again since. Only an
+    /// agent's newest result is unread (owner request, 2026-11-10).
+    public var isSuperseded = false
 
-    public var isUnread: Bool { openedAt == nil }
+    public var isUnread: Bool { openedAt == nil && !isSuperseded }
+
+    /// Marks every result but each agent's newest as superseded. `items`
+    /// are newest first, as the queue is. Approval requests are left alone:
+    /// each still needs an answer.
+    public static func markingSuperseded(_ items: [ReviewItem]) -> [ReviewItem] {
+        var seen = Set<String>()
+        return items.map { item in
+            guard item.kind != .approval else { return item }
+            var item = item
+            item.isSuperseded = !seen.insert(item.agentKey).inserted
+            return item
+        }
+    }
+
+    /// The agent it came from: the reported agent or Herdr link, else its
+    /// label once the agent was forgotten or unlinked.
+    private var agentKey: String {
+        if let reportedAgentID { return "reported:\(reportedAgentID)" }
+        if let linkID { return "link:\(linkID)" }
+        return "label:\(agentLabel)"
+    }
 
     /// Unread or Read for a result; an approval request or a failure keeps
     /// its wording and adds Unread until opened (owner request, 2026-11-10).

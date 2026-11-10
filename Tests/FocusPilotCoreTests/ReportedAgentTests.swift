@@ -274,6 +274,24 @@ struct ReportedAgentTests {
         #expect(failed.stateTitle == "Failed")
     }
 
+    @Test func onlyEachAgentsNewestResultIsUnread() {
+        let newest = item(at: wednesdayMorningInBogota)
+        let older = item(at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        var other = item(at: wednesdayMorningInBogota.addingTimeInterval(-120))
+        other.reportedAgentID = 2
+        var herdr = item(at: wednesdayMorningInBogota.addingTimeInterval(-150), reported: false)
+        herdr.linkID = 7
+        var olderHerdr = item(at: wednesdayMorningInBogota.addingTimeInterval(-160), reported: false)
+        olderHerdr.linkID = 7
+        var approval = item(at: wednesdayMorningInBogota.addingTimeInterval(-180))
+        approval.kind = .approval
+
+        let queue = ReviewItem.markingSuperseded([newest, older, other, herdr, olderHerdr, approval])
+
+        #expect(queue.map(\.isUnread) == [true, false, true, true, false, true])
+        #expect(queue[1].stateTitle == "Read")
+    }
+
     @Test func theNoteCountsShownUnreadResultsOnly() {
         var newest = item(at: wednesdayMorningInBogota.addingTimeInterval(-60), reported: false)
         newest.agentLabel = "Claude Code · Bowling"

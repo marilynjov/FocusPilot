@@ -232,6 +232,17 @@ struct HerdrAgentStorageTests {
         #expect(opened.openedAt == wednesdayMorningInBogota)
     }
 
+    @Test func anAgentsOlderResultIsReadOnceItReportsAgain() async throws {
+        let taskID = try await task()
+        _ = try await link(agent(.working), to: taskID)
+        _ = try await repository.recordAgents([agent(.idle)], on: herdrServer)
+        clock.set(clock.now + 60)
+        _ = try await repository.recordAgents([agent(.working)], on: herdrServer)
+        _ = try await repository.recordAgents([agent(.idle)], on: herdrServer)
+
+        #expect(try await repository.reviewQueue().map(\.isUnread) == [true, false])
+    }
+
     @Test func theQueueIsNewestFirst() async throws {
         let first = try await task("Explain baseline results")
         let second = try await task("PhD shortlist")

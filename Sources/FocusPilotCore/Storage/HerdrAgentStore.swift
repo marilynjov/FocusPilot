@@ -107,9 +107,10 @@ enum HerdrAgentStore {
                        arguments: [output.storedText, output.totalLineCount, id])
     }
 
-    /// Unreviewed items, newest first.
+    /// Unreviewed items, newest first, with older results from the same
+    /// agent superseded.
     static func queue(in db: Database) throws -> [ReviewItem] {
-        try Row.fetchAll(db, sql: """
+        try ReviewItem.markingSuperseded(Row.fetchAll(db, sql: """
             SELECT herdrReviewItem.*, task.title AS taskTitle FROM herdrReviewItem
             JOIN task ON task.id = herdrReviewItem.taskId
             WHERE reviewedAt IS NULL ORDER BY occurredAt DESC, herdrReviewItem.id DESC
@@ -123,7 +124,7 @@ enum HerdrAgentStore {
                               source: (row["source"] as String?).flatMap(AgentSource.init(rawValue:)),
                               agentState: (row["agentState"] as String?).flatMap(ReportedAgentState.init(rawValue:)),
                               openedAt: row["openedAt"])
-        }
+        })
     }
 
     static func markReviewed(_ id: Int64, at now: Date, in db: Database) throws {
