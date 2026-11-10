@@ -31,8 +31,12 @@ struct PlanningView: View {
                 Label("Today", systemImage: "sun.max").tag(Page.today)
                 Label("Today’s plan", systemImage: "calendar.day.timeline.left").tag(Page.dayPlan)
                 Label("Projects", systemImage: "folder").tag(Page.projects)
-                Label("Review queue", systemImage: "tray.full").tag(Page.review)
+                // The tag goes last, on the whole row: after it, the badge
+                // left the row unselectable once the page had been left
+                // (owner report, 2026-11-10).
+                Label("Review queue", systemImage: "tray.full")
                     .badge(model.reviewItems.count)
+                    .tag(Page.review)
                 Label("Settings", systemImage: "gearshape").tag(Page.settings)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)

@@ -107,9 +107,6 @@ private struct AgentLinkView: View {
                     Button("Relink") { Task { await model.relinkAgent(link.id) } }
                         .help("Keep following this agent under its new name.")
                 }
-                if reviewCount > 0 {
-                    Button("Review (\(reviewCount))", action: showReviewQueue)
-                }
                 Spacer()
                 Button("Unlink") { Task { await model.unlinkAgent(link.id) } }
                     .buttonStyle(.link)
@@ -175,21 +172,22 @@ private struct ReportedAgentView: View {
             .compactMap(\.self).joined(separator: ", "))
     }
 
+    /// Two short rows, so every button shows in the panel's width; results
+    /// are reached from the sidebar's Review queue (owner feedback, 2026-11-10).
     private var buttons: some View {
-        HStack(spacing: 8) {
-            Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
-                .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
+                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
+                Spacer()
+                Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
+                    .buttonStyle(.link)
+                    .accessibilityLabel("Unlink \(agent.label)")
+            }
             if agent.terminal.app == "WarpTerminal", agent.folder != nil {
                 Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
                     .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
             }
-            if reviewCount > 0 {
-                Button("Review (\(reviewCount))", action: showReviewQueue)
-            }
-            Spacer()
-            Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
-                .buttonStyle(.link)
-                .accessibilityLabel("Unlink \(agent.label)")
         }
         .controlSize(.small)
     }
