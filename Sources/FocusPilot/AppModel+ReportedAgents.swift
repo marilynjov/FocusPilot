@@ -27,10 +27,11 @@ extension AppModel {
     var heldReviewCount: Int { allReviewItems.count - reviewItems.count }
 
     /// The raccoon's note for shown results the owner hasn't opened yet,
-    /// naming the newest one's agent; held results don't count.
+    /// naming the newest one's agent; held results and approval requests
+    /// don't count.
     var raccoonUnreadNote: String? {
-        let unread = reviewItems.filter(\.isUnread)
-        return RaccoonPresence.unreadNote(count: unread.count, newestLabel: unread.first?.agentLabel)
+        RaccoonPresence.unreadNote(for: allReviewItems, session: snapshot.activeSession,
+                                   planSession: snapshot.activePlanRun != nil, releasedAt: reviewReleasedAt)
     }
 
     /// Clicking the raccoon's unread note: the Review queue, in the

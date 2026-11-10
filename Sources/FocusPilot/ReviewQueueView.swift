@@ -61,14 +61,6 @@ struct ReviewQueueView: View {
 }
 
 extension ReviewItem {
-    /// Unread or Read for a result; an approval request or a failure keeps
-    /// its wording and adds Unread until opened.
-    var stateTitle: String {
-        let state = kind == .approval ? "Needs your approval" : agentState == .failed ? "Failed" : nil
-        guard let state else { return isUnread ? "Unread" : "Read" }
-        return isUnread ? "\(state) · Unread" : state
-    }
-
     var timeTitle: String {
         let time = occurredAt.formatted(date: .omitted, time: .shortened)
         return kind == .approval ? "Waiting since \(time)" : agentState == .failed ? "Failed \(time)" : "Finished \(time)"
@@ -83,22 +75,15 @@ extension ReviewItem {
 }
 
 /// "ablation · NLP report → Explain baseline results", the time, one line of
-/// output, and Unread, Read or Needs your approval. An unread item has an
-/// accent dot and a bold name.
+/// output, and Unread, Read or Needs your approval. An unread item has a
+/// bold name and a filled status dot; a read result's dot is hollow.
 struct AgentResultRow: View {
     let item: ReviewItem
-    @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    if item.isUnread {
-                        Circle()
-                            .fill(palette.color(.accent))
-                            .frame(width: 8, height: 8)
-                            .contrastOutline()
-                    }
                     Text(verbatim: item.place)
                         .fontWeight(item.isUnread ? .bold : .medium)
                     Text(verbatim: "→ \(item.taskTitle)")

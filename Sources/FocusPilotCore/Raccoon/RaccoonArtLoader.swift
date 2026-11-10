@@ -295,6 +295,18 @@ public struct RaccoonPresence: Equatable, Sendable {
         return "\(count) unread · \(label)"
     }
 
+    /// The note for the Review queue as shown: unread results, newest
+    /// first, leaving out approval requests and results held for the next
+    /// break (`ReviewHold`).
+    public static func unreadNote(for items: [ReviewItem], session: FocusSession?, planSession: Bool,
+                                  releasedAt: Date? = nil) -> String? {
+        let unread = items.filter {
+            $0.isUnread && $0.kind != .approval
+                && !ReviewHold.isHeld($0, session: session, planSession: planSession, releasedAt: releasedAt)
+        }
+        return unreadNote(count: unread.count, newestLabel: unread.first?.agentLabel)
+    }
+
     /// The floating window: the task's pose while a session is under way
     /// and the planning window is not in front (the window shows it
     /// instead); a peek replaces that while it lasts. Peeks-in mode shows

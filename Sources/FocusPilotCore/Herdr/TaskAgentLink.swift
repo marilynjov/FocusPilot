@@ -102,6 +102,14 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
     public var openedAt: Date? = nil
 
     public var isUnread: Bool { openedAt == nil }
+
+    /// Unread or Read for a result; an approval request or a failure keeps
+    /// its wording and adds Unread until opened (owner request, 2026-11-10).
+    public var stateTitle: String {
+        let state = kind == .approval ? "Needs your approval" : agentState == .failed ? "Failed" : nil
+        guard let state else { return isUnread ? "Unread" : "Read" }
+        return isUnread ? "\(state) · Unread" : state
+    }
 }
 
 /// An item just queued, whose output is still to be read from `paneID`.

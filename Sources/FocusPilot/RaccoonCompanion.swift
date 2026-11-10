@@ -488,6 +488,7 @@ final class RaccoonStageView: NSView {
         if let message, let bubble, bubble.actions == actions {
             bubble.setMessage(message)
             bubble.toolTip = toolTip
+            bubble.setAccessibilityHelp(toolTip)
             bubble.setFrameOrigin(bubbleOrigin(width: bubble.frame.width))
             return
         }
@@ -497,6 +498,7 @@ final class RaccoonStageView: NSView {
             let view = RaccoonBubbleView(message: message, actions: actions, maxWidth: bounds.width)
             view.setFrameOrigin(bubbleOrigin(width: view.frame.width))
             view.toolTip = toolTip
+            view.setAccessibilityHelp(toolTip)
             view.onClick = { [weak self] in self?.onBubbleClick?() }
             view.onAction = { [weak self] action in self?.onBubbleAction?(action) }
             addSubview(view)
@@ -803,11 +805,14 @@ struct RaccoonWindowView: View {
     /// Whether the Now card around it shows the session controls; when it
     /// does not, the tag carries all of the peek's buttons.
     var cardShowsSessionControls = true
+    /// Whether the unread note shows; the Review queue page leaves it out,
+    /// since the page already shows the same and the note would cover it.
+    var showsNote = true
 
     var body: some View {
         if model.raccoonIsInWindow,
            let presence = RaccoonPresence.inWindow(mode: model.displayPreferences.raccoonMode, activity: model.raccoonActivity,
-                                                   peek: model.raccoonPeek, note: model.raccoonUnreadNote),
+                                                   peek: model.raccoonPeek, note: showsNote ? model.raccoonUnreadNote : nil),
            let art = model.raccoon.loadArt() {
             let raccoon = RaccoonStage(art: art, poseID: presence.poseID)
                 .frame(width: RaccoonStage.size(art).width, height: RaccoonStage.size(art).height)

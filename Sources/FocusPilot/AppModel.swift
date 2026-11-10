@@ -406,10 +406,21 @@ final class AppModel {
     }
 
     /// The owner selected the item in the Review queue: it is read from now
-    /// on. Opening a read item again writes nothing.
+    /// on. Opening a read item again writes nothing. Only that item changes,
+    /// so it is updated in place rather than reloading everything.
     func markOpened(_ itemID: Int64) async {
-        guard allReviewItems.first(where: { $0.id == itemID })?.isUnread == true else { return }
-        await perform("Could not mark the result read") { try await $0.markOpened(itemID) }
+        guard let coordinator, allReviewItems.first(where: { $0.id == itemID })?.isUnread == true else { return }
+        do {
+            try await coordinator.markOpened(itemID)
+        } catch {
+            taskError = "Could not mark the result read: \(error.localizedDescription)"
+            return
+        }
+        // The queue may have been reloaded meanwhile; the next refresh reads
+        // the stored time anyway.
+        if let index = allReviewItems.firstIndex(where: { $0.id == itemID }) {
+            allReviewItems[index].openedAt = .now
+        }
     }
 
     /// The owner clicked Open agent: focuses that agent's pane in Herdr.
