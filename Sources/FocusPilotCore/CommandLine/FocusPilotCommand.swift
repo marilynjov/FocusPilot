@@ -29,7 +29,8 @@ public struct FocusPilotCommand: Sendable {
                                   [--folder <path>] [--summary <text>] [--task <id>]
                                   [--terminal <app>] [--tty <device>] [--session <id>]
                                            Tell FocusPilot what an agent is doing. The folder
-                                           defaults to this one; the terminal to this one.
+                                           defaults to this one; the terminal to this one;
+                                           the task to FOCUSPILOT_TASK, if set.
           focuspilot agent report --from-claude-hook <event> [--name <label>]
                                            For Claude Code hooks: reads the hook's JSON on stdin.
           focuspilot run [--task <id>] [--name <label>] -- <command> [args...]
