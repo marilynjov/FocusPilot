@@ -34,11 +34,11 @@ extension TaskRepository {
         try await ownerDatabase.write { db in try ReportedAgentStore.forget(agentID, in: db) }
     }
 
-    /// A task's title, for the Warp window Go to agent looks for; nil if
-    /// the task is gone.
-    public func taskTitle(_ taskID: Int64) async throws -> String? {
+    /// Every task not done, so the Warp launch configurations of the rest
+    /// can go (`WarpLaunch.removeStale`).
+    public func openTaskIDs() async throws -> Set<Int64> {
         try await ownerDatabase.read { db in
-            try String.fetchOne(db, sql: "SELECT title FROM task WHERE id = ?", arguments: [taskID])
+            Set(try Int64.fetchAll(db, sql: "SELECT id FROM task WHERE status != 'done'"))
         }
     }
 }

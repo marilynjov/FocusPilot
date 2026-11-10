@@ -28,7 +28,7 @@ extension FocusCoordinator {
         try await repository.forgetReportedAgent(agentID)
     }
 
-    public func taskTitle(_ taskID: Int64) async throws -> String? {
-        try await repository.taskTitle(taskID)
+    public func openTaskIDs() async throws -> Set<Int64> {
+        try await repository.openTaskIDs()
     }
 }

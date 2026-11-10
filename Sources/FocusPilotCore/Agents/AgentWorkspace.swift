@@ -32,26 +32,30 @@ public enum AgentWorkspace {
         case none(String)
     }
 
-    /// `task` is the agent's task, if it has one: a Warp agent may run in
-    /// the window FocusPilot started for it, titled after the task.
-    public static func action(for terminal: TerminalPlace, task: (id: Int64, title: String)? = nil) -> Action {
+    /// `warpWindow` is the title in the launch configuration FocusPilot
+    /// wrote for the agent's task, if there is one (`WarpLaunch.windowTitle`):
+    /// only then may a Warp agent run in a window of its own, so an agent
+    /// FocusPilot never started doesn't ask for Accessibility.
+    public static func action(for terminal: TerminalPlace, warpWindow: String? = nil) -> Action {
         guard let name = terminal.app, let app = apps[name] else {
             return .none(terminal.app.map { "FocusPilot doesn’t know how to bring \($0) forward. Switch to it yourself." }
                 ?? "This agent didn’t say which terminal it runs in, so FocusPilot can’t bring it forward.")
         }
-        if app == warp, let task { return .window(app, title: warpWindowTitle(taskID: task.id, taskTitle: task.title)) }
+        if app == warp, let warpWindow { return .window(app, title: warpWindow) }
         if app != warp, let tty = terminal.tty.flatMap(AgentText.tty) { return .tab(app, tty: tty) }
         return .activate(app)
     }
 
     // MARK: Warp windows
 
-    /// "FocusPilot · Write chapter 2": the title FocusPilot gives the Warp
-    /// window it starts for a task, and looks for later. The task's title is
-    /// cleaned to one line of visible text and capped; one with nothing left
-    /// is named by its number.
+    /// "FocusPilot · Write chapter 2 (12)": the title FocusPilot gives the
+    /// Warp window it starts for a task. The task's number keeps two tasks
+    /// with the same title apart; Go to agent reads the title back from the
+    /// launch configuration, so renaming the task doesn't lose the window.
+    /// The task's title is cleaned to one line of visible text and capped;
+    /// one with nothing left is named by its number alone.
     public static func warpWindowTitle(taskID: Int64, taskTitle: String) -> String {
-        "FocusPilot · " + (AgentText.line(taskTitle, limit: warpTitleLimit) ?? "Task \(taskID)")
+        "FocusPilot · " + (AgentText.line(taskTitle, limit: warpTitleLimit).map { "\($0) (\(taskID))" } ?? "Task \(taskID)")
     }
 
     static let warpTitleLimit = 80

@@ -201,6 +201,15 @@ private struct ReportedAgentView: View {
 private struct StartClaudeCodeView: View {
     let model: AppModel
     let task: TodayItem
+    /// Where it would start, found on disk only when the task or its
+    /// agents' folders change, not on every redraw.
+    @State private var folder: String?
+
+    /// What `claudeCodeFolder` reads, without touching the disk.
+    private var folderSources: [String?] {
+        [String(task.id), task.projectID.flatMap { id in model.projects.first { $0.id == id }?.herdrLink?.cwd }]
+            + model.reportedAgents.filter { $0.taskID == task.id }.map(\.folder)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -218,13 +227,14 @@ private struct StartClaudeCodeView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .controlSize(.small)
+        .task(id: folderSources) { folder = model.claudeCodeFolder(for: task) }
     }
 
     private var caption: String {
         guard model.isAgentMonitoringOn else {
             return "Turn on Agent monitoring in Settings › General to start Claude Code from here."
         }
-        let place = model.claudeCodeFolder(for: task).map { "in \(($0 as NSString).abbreviatingWithTildeInPath)" }
+        let place = folder.map { "in \(($0 as NSString).abbreviatingWithTildeInPath)" }
             ?? "in a folder you choose"
         return "A new Warp window \(place), which Go to agent brings back."
     }

@@ -27,11 +27,11 @@ final class WarpLaunchTests {
             name: "focuspilot-task-12"
             windows:
               - tabs:
-                  - title: "FocusPilot · Write chapter 2"
+                  - title: "FocusPilot · Write chapter 2 (12)"
                     layout:
                       cwd: "\(folder.path)"
                       commands:
-                        - exec: "FOCUSPILOT_TASK=12 claude"
+                        - exec: "env FOCUSPILOT_TASK=12 claude"
 
             """)
         #expect(launch.url?.absoluteString == "warp://launch/focuspilot-task-12")
@@ -56,17 +56,22 @@ final class WarpLaunchTests {
         #expect(lines.filter { $0 == "---" }.count == 1)
         #expect(lines[4].hasPrefix("      - title: \""))
         #expect(lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- exec:") }
-            == [#"            - exec: "FOCUSPILOT_TASK=7 claude""#])
+            == [#"            - exec: "env FOCUSPILOT_TASK=7 claude""#])
         #expect(!launch.yaml.unicodeScalars.contains { $0.properties.generalCategory == .control && $0 != "\n" })
         #expect(!launch.yaml.contains("\u{2028}") && !launch.yaml.contains("\u{2029}"))
         // The title value, read back as YAML would, is the window title.
-        #expect(Self.unquoted(String(lines[4].dropFirst("      - title: ".count))) == launch.windowTitle)
+        #expect(WarpLaunch.unquoted(String(lines[4].dropFirst("      - title: ".count))) == launch.windowTitle)
+        #expect(WarpLaunch.windowTitle(inConfiguration: launch.yaml) == launch.windowTitle)
     }
 
     @Test func theTitleIsOneCappedLine() {
         let title = AgentWorkspace.warpWindowTitle(taskID: 3, taskTitle: "  Fix\n\tthe\u{202E} bug  " + String(repeating: "x", count: 200))
         #expect(title.hasPrefix("FocusPilot · Fix the bug xxx"))
-        #expect(title.count == "FocusPilot · ".count + AgentWorkspace.warpTitleLimit)
+        #expect(title.hasSuffix("x… (3)"))
+        #expect(title.count == "FocusPilot · ".count + AgentWorkspace.warpTitleLimit + " (3)".count)
+        // Two tasks with the same title get different windows.
+        #expect(AgentWorkspace.warpWindowTitle(taskID: 4, taskTitle: "Fix bug")
+            != AgentWorkspace.warpWindowTitle(taskID: 5, taskTitle: "Fix bug"))
         #expect(AgentWorkspace.warpWindowTitle(taskID: 3, taskTitle: "\n\u{200B}") == "FocusPilot · Task 3")
     }
 
@@ -83,13 +88,14 @@ final class WarpLaunchTests {
         let file = folder.appendingPathComponent("file.txt")
         try Data().write(to: file)
         #expect(WarpLaunch.usableFolder(file.path) == nil)
-        for name in ["$(touch x)", "a`b`", "a;b", "a\"b", "a'b", "a|b", "a&b", "a\\b", "a!b"] {
+        for name in ["$(touch x)", "a`b`", "a;b", "a\"b", "a'b", "a|b", "a&b", "a\\b", "a!b", "~x", "a*", "a?", "a[b]",
+                     "a{b,c}", "a(b)", "a#b"] {
             let hostile = folder.appendingPathComponent(name)
             try FileManager.default.createDirectory(at: hostile, withIntermediateDirectories: true)
             #expect(WarpLaunch.usableFolder(hostile.path) == nil, "\(name)")
             #expect(WarpLaunch(taskID: 1, taskTitle: "t", folder: hostile.path) == nil)
         }
-        let spaced = folder.appendingPathComponent("My Project (2)")
+        let spaced = folder.appendingPathComponent("My Project 2")
         try FileManager.default.createDirectory(at: spaced, withIntermediateDirectories: true)
         #expect(WarpLaunch.usableFolder(spaced.path) == spaced.path)
         #expect(WarpLaunch(taskID: 0, taskTitle: "t", folder: spaced.path) == nil)
@@ -108,14 +114,40 @@ final class WarpLaunchTests {
 
     // MARK: Go to agent
 
-    @Test func aWarpAgentWithATaskLooksForItsWindow() {
+    @Test func onlyAWarpAgentFocusPilotStartedLooksForItsWindow() {
         let warp = TerminalPlace(app: "WarpTerminal", tty: "/dev/ttys004")
-        #expect(AgentWorkspace.action(for: warp, task: (12, "Write chapter 2"))
-            == .window(AgentWorkspace.warp, title: "FocusPilot · Write chapter 2"))
+        #expect(AgentWorkspace.action(for: warp, warpWindow: "FocusPilot · Write chapter 2 (12)")
+            == .window(AgentWorkspace.warp, title: "FocusPilot · Write chapter 2 (12)"))
+        // No launch configuration for its task: no window to look for.
         #expect(AgentWorkspace.action(for: warp) == .activate(AgentWorkspace.warp))
         // Other terminals keep going by device.
-        #expect(AgentWorkspace.action(for: TerminalPlace(app: "iTerm.app", tty: "/dev/ttys009"), task: (12, "x"))
+        #expect(AgentWorkspace.action(for: TerminalPlace(app: "iTerm.app", tty: "/dev/ttys009"), warpWindow: "x")
             == .tab(AgentWorkspace.iTerm, tty: "/dev/ttys009"))
+    }
+
+    @Test func goToAgentReadsTheTitleItWroteSoARenameDoesNotLoseTheWindow() throws {
+        let directory = folder.appendingPathComponent("launch_configurations")
+        #expect(WarpLaunch.windowTitle(ofTask: 12, in: directory) == nil)
+        try #require(WarpLaunch(taskID: 12, taskTitle: "Old \"name\" #1", folder: folder.path)).write(into: directory)
+        #expect(WarpLaunch.windowTitle(ofTask: 12, in: directory) == "FocusPilot · Old \"name\" #1 (12)")
+        #expect(WarpLaunch.windowTitle(ofTask: 13, in: directory) == nil)
+        #expect(WarpLaunch.windowTitle(inConfiguration: "- title: unquoted") == nil)
+    }
+
+    @Test func onlyConfigurationsOfTasksNoLongerOpenAreRemoved() throws {
+        let directory = folder.appendingPathComponent("launch_configurations")
+        for id: Int64 in [1, 2, 3] {
+            try #require(WarpLaunch(taskID: id, taskTitle: "t", folder: folder.path)).write(into: directory)
+        }
+        for other in ["mine.yaml", "focuspilot-task-x.yaml", "focuspilot-task-02.yaml", "focuspilot-task-4.yml"] {
+            try Data().write(to: directory.appendingPathComponent(other))
+        }
+        WarpLaunch.removeStale(keeping: [2], in: directory)
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+            == ["focuspilot-task-2.yaml", "mine.yaml", "focuspilot-task-x.yaml", "focuspilot-task-02.yaml",
+                "focuspilot-task-4.yml"])
+        // A missing directory is left alone.
+        WarpLaunch.removeStale(keeping: [], in: folder.appendingPathComponent("missing"))
     }
 
     @Test func onlyAnExactTitleMatches() {
@@ -140,33 +172,5 @@ final class WarpLaunchTests {
                                            isUsable: usable.contains) == "/b")
         #expect(AgentWorkspace.startFolder(agentFolders: ["/gone"], projectFolder: "/p", isUsable: usable.contains) == "/p")
         #expect(AgentWorkspace.startFolder(agentFolders: [], projectFolder: nil, isUsable: usable.contains) == nil)
-    }
-
-    /// Reads a double-quoted scalar back for the escapes `quoted` writes.
-    private static func unquoted(_ text: String) -> String? {
-        guard text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") else { return nil }
-        var out = ""
-        var scalars = Array(text.dropFirst().dropLast().unicodeScalars)[...]
-        while let scalar = scalars.popFirst() {
-            guard scalar == "\\" else {
-                if scalar == "\"" { return nil }
-                out.unicodeScalars.append(scalar)
-                continue
-            }
-            guard let code = scalars.popFirst() else { return nil }
-            switch code {
-            case "\\", "\"": out.unicodeScalars.append(code)
-            case "n": out += "\n"
-            case "r": out += "\r"
-            case "t": out += "\t"
-            case "x", "u":
-                let digits = String(String.UnicodeScalarView(scalars.prefix(code == "x" ? 2 : 4)))
-                scalars = scalars.dropFirst(code == "x" ? 2 : 4)
-                guard let value = UInt32(digits, radix: 16), let decoded = Unicode.Scalar(value) else { return nil }
-                out.unicodeScalars.append(decoded)
-            default: return nil
-            }
-        }
-        return out
     }
 }

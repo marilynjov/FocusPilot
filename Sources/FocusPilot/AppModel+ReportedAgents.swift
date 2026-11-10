@@ -141,9 +141,9 @@ extension AppModel {
         guard let agent = reportedAgents.first(where: { $0.id == agentID }) else {
             return tell("FocusPilot no longer has this agent.", from: click)
         }
-        var task: (id: Int64, title: String)?
-        if let taskID = agent.taskID, let title = try? await coordinator?.taskTitle(taskID) { task = (taskID, title) }
-        let notice: String? = switch AgentWorkspace.action(for: agent.terminal, task: task) {
+        // The title FocusPilot gave the task's window, if it started one.
+        let window = agent.taskID.flatMap { WarpLaunch.windowTitle(ofTask: $0, in: WarpLaunch.standardDirectory) }
+        let notice: String? = switch AgentWorkspace.action(for: agent.terminal, warpWindow: window) {
         case .none(let message): message
         case .activate(let app): activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
         case .tab(let app, let tty): await selectTab(tty, in: app)
@@ -207,6 +207,15 @@ extension AppModel {
             return
         }
         agentNotice = nil
+    }
+
+    /// Removes the Warp launch configurations of tasks that are done or
+    /// gone, whenever the open tasks change, so their old FOCUSPILOT_TASK
+    /// doesn't linger in Warp's list.
+    func removeStaleWarpLaunches() async {
+        guard let open = try? await coordinator?.openTaskIDs(), open != openTaskIDsSeen else { return }
+        openTaskIDsSeen = open
+        WarpLaunch.removeStale(keeping: open, in: WarpLaunch.standardDirectory)
     }
 
     /// Asks the owner for the folder Claude Code works in. Nil if cancelled.

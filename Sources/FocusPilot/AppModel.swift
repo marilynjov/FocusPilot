@@ -50,6 +50,8 @@ final class AppModel {
     /// Go to agent asked macOS for Accessibility once this launch; after
     /// that the notice says where to turn it on.
     @ObservationIgnored var askedForAccessibility = false
+    /// The open tasks when Warp's launch configurations were last tidied.
+    @ObservationIgnored var openTaskIDsSeen: Set<Int64>?
     /// Set when a session command fails; shown by the session surfaces.
     var sessionError: String?
     /// Asks the planning window to show the Start focus sheet.
@@ -332,6 +334,7 @@ final class AppModel {
             reportedAgents = try await coordinator.reportedAgents()
             isAgentMonitoringOn = try await coordinator.isAgentMonitoringOn()
             pruneAgentsNeedingYou()
+            await removeStaleWarpLaunches()
             taskError = nil
         } catch {
             taskError = "Could not load tasks: \(error.localizedDescription)"
