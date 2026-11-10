@@ -33,4 +33,12 @@ extension TaskRepository {
     public func forgetReportedAgent(_ agentID: Int64) async throws {
         try await ownerDatabase.write { db in try ReportedAgentStore.forget(agentID, in: db) }
     }
+
+    /// A task's title, for the Warp window Go to agent looks for; nil if
+    /// the task is gone.
+    public func taskTitle(_ taskID: Int64) async throws -> String? {
+        try await ownerDatabase.read { db in
+            try String.fetchOne(db, sql: "SELECT title FROM task WHERE id = ?", arguments: [taskID])
+        }
+    }
 }

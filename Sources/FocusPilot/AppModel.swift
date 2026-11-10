@@ -47,6 +47,9 @@ final class AppModel {
     @ObservationIgnored let notificationClicks = NotificationClicks()
     /// Why the last Open agent did nothing, shown where it was clicked.
     var agentNotice: String?
+    /// Go to agent asked macOS for Accessibility once this launch; after
+    /// that the notice says where to turn it on.
+    @ObservationIgnored var askedForAccessibility = false
     /// Set when a session command fails; shown by the session surfaces.
     var sessionError: String?
     /// Asks the planning window to show the Start focus sheet.

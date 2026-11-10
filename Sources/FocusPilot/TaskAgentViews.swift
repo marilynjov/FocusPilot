@@ -50,6 +50,7 @@ struct TaskAgentInspector: View {
                                           showReviewQueue: showReviewQueue)
                     }
                 }
+                StartClaudeCodeView(model: model, task: task)
                 if !unlinked.isEmpty {
                     UnlinkedAgentsView(model: model, agents: unlinked, taskID: task.id)
                 }
@@ -178,7 +179,7 @@ private struct ReportedAgentView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
-                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
+                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, its own Warp window if FocusPilot started it, else Warp.")
                 Spacer()
                 Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
                     .buttonStyle(.link)
@@ -190,6 +191,42 @@ private struct ReportedAgentView: View {
             }
         }
         .controlSize(.small)
+    }
+}
+
+/// Starts Claude Code for the task in a Warp window of its own, which Go
+/// to agent brings back later (decision 0005, owner's choice 2026-11-10).
+/// The menu's item picks another folder. Off with agent monitoring, since
+/// the agent's reports would be refused.
+private struct StartClaudeCodeView: View {
+    let model: AppModel
+    let task: TodayItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Menu("Start Claude Code", systemImage: "terminal") {
+                Button("Choose Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
+            } primaryAction: {
+                model.startClaudeCode(for: task)
+            }
+            .fixedSize()
+            .disabled(!model.isAgentMonitoringOn)
+            .help("Opens Claude Code in a new Warp window for this task. Its reports come linked to this task.")
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .controlSize(.small)
+    }
+
+    private var caption: String {
+        guard model.isAgentMonitoringOn else {
+            return "Turn on Agent monitoring in Settings › General to start Claude Code from here."
+        }
+        let place = model.claudeCodeFolder(for: task).map { "in \(($0 as NSString).abbreviatingWithTildeInPath)" }
+            ?? "in a folder you choose"
+        return "A new Warp window \(place), which Go to agent brings back."
     }
 }
 

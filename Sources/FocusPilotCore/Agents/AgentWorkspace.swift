@@ -22,6 +22,9 @@ public enum AgentWorkspace {
     public enum Action: Equatable, Sendable {
         /// The exact tab, found by its terminal device through AppleScript.
         case tab(App, tty: String)
+        /// The Warp window FocusPilot started for the agent's task, found
+        /// by its title through Accessibility (`WarpLaunch`).
+        case window(App, title: String)
         /// The app in front; which tab is the owner's to find. Warp
         /// documents no way to reach an existing tab.
         case activate(App)
@@ -29,13 +32,71 @@ public enum AgentWorkspace {
         case none(String)
     }
 
-    public static func action(for terminal: TerminalPlace) -> Action {
+    /// `task` is the agent's task, if it has one: a Warp agent may run in
+    /// the window FocusPilot started for it, titled after the task.
+    public static func action(for terminal: TerminalPlace, task: (id: Int64, title: String)? = nil) -> Action {
         guard let name = terminal.app, let app = apps[name] else {
             return .none(terminal.app.map { "FocusPilot doesn’t know how to bring \($0) forward. Switch to it yourself." }
                 ?? "This agent didn’t say which terminal it runs in, so FocusPilot can’t bring it forward.")
         }
+        if app == warp, let task { return .window(app, title: warpWindowTitle(taskID: task.id, taskTitle: task.title)) }
         if app != warp, let tty = terminal.tty.flatMap(AgentText.tty) { return .tab(app, tty: tty) }
         return .activate(app)
+    }
+
+    // MARK: Warp windows
+
+    /// "FocusPilot · Write chapter 2": the title FocusPilot gives the Warp
+    /// window it starts for a task, and looks for later. The task's title is
+    /// cleaned to one line of visible text and capped; one with nothing left
+    /// is named by its number.
+    public static func warpWindowTitle(taskID: Int64, taskTitle: String) -> String {
+        "FocusPilot · " + (AgentText.line(taskTitle, limit: warpTitleLimit) ?? "Task \(taskID)")
+    }
+
+    static let warpTitleLimit = 80
+
+    /// The first window whose title is exactly `title`. Warp shows the
+    /// active tab's title on its window, so a window where the owner opened
+    /// and chose another tab no longer matches.
+    public static func window(titled title: String, in titles: [String?]) -> Int? {
+        titles.firstIndex { $0 == title }
+    }
+
+    /// What happened when Go to agent looked for the agent's Warp window.
+    public enum WindowSearch: Equatable, Sendable {
+        case raised
+        /// FocusPilot isn't allowed to use Accessibility; Warp came forward.
+        case notAllowed
+        /// No window has the title; Warp came forward.
+        case notFound
+        case notRunning
+    }
+
+    /// What the owner is told after a Warp window search; nil when the
+    /// window came forward.
+    public static func notice(after search: WindowSearch, folder: String?) -> String? {
+        switch search {
+        case .raised: nil
+        case .notAllowed:
+            "Warp is in front. To let FocusPilot bring the agent’s own window forward, turn on FocusPilot in System Settings › Privacy & Security › Accessibility."
+        case .notFound: warpNotice(folder: folder)
+        case .notRunning: "Warp isn’t running, so the agent has stopped."
+        }
+    }
+
+    /// Warp came forward, but not the agent's own window.
+    public static func warpNotice(folder: String?) -> String {
+        let place = folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
+        return "Warp is in front, but FocusPilot can’t pick a tab, so look for the one\(place). Agents started with Start Claude Code get their own window that Go to agent brings forward."
+    }
+
+    /// The folder a new Claude Code window for a task starts in: where an
+    /// agent linked to it last reported from (`folders`, newest first), else
+    /// its project's Herdr workspace folder. Nil means the owner chooses.
+    public static func startFolder(agentFolders folders: [String?], projectFolder: String?,
+                                   isUsable: (String) -> Bool) -> String? {
+        (folders + [projectFolder]).lazy.compactMap(\.self).first(where: isUsable)
     }
 
     /// The AppleScript that selects the tab whose terminal device is `tty`

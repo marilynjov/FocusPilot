@@ -133,19 +133,93 @@ extension AppModel {
     // MARK: Go to agent
 
     /// Brings the agent's terminal forward: the exact Terminal or iTerm2
-    /// tab when its report named the terminal device, else the app. Only
-    /// ever for the owner's click.
+    /// tab when its report named the terminal device, the Warp window
+    /// FocusPilot started for its task, else the app. Only ever for the
+    /// owner's click.
     func goToAgent(_ agentID: Int64, from click: AgentClick) async {
         if reportedAgents.first(where: { $0.id == agentID }) == nil { await refresh() }
         guard let agent = reportedAgents.first(where: { $0.id == agentID }) else {
             return tell("FocusPilot no longer has this agent.", from: click)
         }
-        let notice: String? = switch AgentWorkspace.action(for: agent.terminal) {
+        var task: (id: Int64, title: String)?
+        if let taskID = agent.taskID, let title = try? await coordinator?.taskTitle(taskID) { task = (taskID, title) }
+        let notice: String? = switch AgentWorkspace.action(for: agent.terminal, task: task) {
         case .none(let message): message
         case .activate(let app): activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
         case .tab(let app, let tty): await selectTab(tty, in: app)
+        case .window(let app, let title): AgentWorkspace.notice(after: raiseWindow(titled: title, in: app), folder: agent.folder)
         }
         if let notice { tell(notice, from: click) } else { agentNotice = nil }
+    }
+
+    /// Raises the window titled `title` through Accessibility, then brings
+    /// the app forward whatever happened. The first time this launch that
+    /// FocusPilot isn't allowed, macOS is asked to show its request.
+    private func raiseWindow(titled title: String, in app: AgentWorkspace.App) -> AgentWorkspace.WindowSearch {
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).first else {
+            return .notRunning
+        }
+        let allowed = WarpWindows.isAllowed(prompting: !askedForAccessibility)
+        if !allowed { askedForAccessibility = true }
+        let raised = allowed && WarpWindows.raise(titled: title, pid: running.processIdentifier)
+        _ = activate(app)
+        return !allowed ? .notAllowed : raised ? .raised : .notFound
+    }
+
+    // MARK: Start Claude Code
+
+    /// Where Start Claude Code opens for the task without asking: where an
+    /// agent linked to it last reported from, else its project's Herdr
+    /// workspace folder. Nil means the owner is asked.
+    func claudeCodeFolder(for task: TodayItem) -> String? {
+        let project = task.projectID.flatMap { id in projects.first { $0.id == id }?.herdrLink?.cwd }
+        return AgentWorkspace.startFolder(agentFolders: reportedAgents.filter { $0.taskID == task.id }.map(\.folder),
+                                          projectFolder: project, isUsable: { WarpLaunch.usableFolder($0) != nil })
+    }
+
+    /// Starts Claude Code for the task in a new Warp window of its own,
+    /// titled after the task, so Go to agent can bring that window back
+    /// (`WarpLaunch`). In `claudeCodeFolder`, or one the owner chooses when
+    /// there is none or `choosingFolder`. Only for the owner's click; the
+    /// agent's reports then come linked to the task.
+    func startClaudeCode(for task: TodayItem, choosingFolder: Bool = false) {
+        guard isAgentMonitoringOn else {
+            agentNotice = "Turn on Agent monitoring in Settings › General to start Claude Code from FocusPilot."
+            return
+        }
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: AgentWorkspace.warp.bundleID) != nil else {
+            agentNotice = "Warp isn’t installed, so FocusPilot can’t start Claude Code in it."
+            return
+        }
+        guard let folder = (choosingFolder ? nil : claudeCodeFolder(for: task)) ?? chooseFolder(for: task) else { return }
+        guard let launch = WarpLaunch(taskID: task.id, taskTitle: task.title, folder: folder) else {
+            agentNotice = "FocusPilot can’t start Claude Code in that folder. Choose a folder whose path has no quotes or any of $ ; & | < > ! `."
+            return
+        }
+        do {
+            try launch.write(into: WarpLaunch.standardDirectory)
+        } catch {
+            agentNotice = "Could not save Warp’s launch configuration: \(error.localizedDescription)"
+            return
+        }
+        guard let url = launch.url, NSWorkspace.shared.open(url) else {
+            agentNotice = "Warp didn’t open the new window."
+            return
+        }
+        agentNotice = nil
+    }
+
+    /// Asks the owner for the folder Claude Code works in. Nil if cancelled.
+    private func chooseFolder(for task: TodayItem) -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.prompt = "Start Here"
+        panel.message = "Choose the folder Claude Code works in for “\(task.title)”."
+        return panel.runModal() == .OK ? panel.url?.path : nil
     }
 
     /// Opens a new Warp tab in the agent's folder, through Warp's
@@ -156,9 +230,7 @@ extension AppModel {
     }
 
     private func warpNotice(_ app: AgentWorkspace.App, _ agent: ReportedAgent) -> String? {
-        guard app == AgentWorkspace.warp else { return nil }
-        let place = agent.folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
-        return "Warp is in front. Warp has no way for FocusPilot to pick a tab, so look for the one\(place)."
+        app == AgentWorkspace.warp ? AgentWorkspace.warpNotice(folder: agent.folder) : nil
     }
 
     /// Selects the tab through AppleScript. The first time, macOS asks the
