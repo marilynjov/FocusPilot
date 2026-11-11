@@ -91,7 +91,10 @@ enum ReportedAgentStore {
             row.terminalApp = report.terminal.app ?? row.terminalApp
             row.terminalTTY = report.terminal.tty ?? row.terminalTTY
             row.terminalSession = report.terminal.sessionID ?? row.terminalSession
-            row.warpWindow = report.warpWindow ?? row.warpWindow
+            // A newer Claude Code report without the window's token comes
+            // from elsewhere: the chat was quit and resumed in another tab.
+            // While the old window and a new tab both run, it may flip.
+            row.warpWindow = report.warpWindow ?? (report.source == .claudeCodeHook ? nil : row.warpWindow)
             if row.state != state.rawValue { row.stateChangedAt = reportedAt }
             row.state = state.rawValue
             row.lastMessage = report.summary

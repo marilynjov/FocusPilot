@@ -193,12 +193,12 @@ private struct ReportedAgentView: View {
                     .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
             }
             // A chat FocusPilot didn't open, resumed in a window Go to agent
-            // can bring forward (decision 0005, 2026-11-11). Not while it
-            // works: the old tab is still busy with the turn.
+            // can bring forward (decision 0005, 2026-11-11). Only once its
+            // turn has ended, so two Claude Codes never run one session.
             if model.isAgentMonitoringOn, AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk),
                AgentWorkspace.canResumeNow(agent.state(at: now)) {
                 Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
-                    .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Offered when it isn’t working, so no turn is cut short. Close the old tab afterwards so you don’t type in both.")
+                    .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Offered once its turn has ended (Ready or Failed), so two copies never run the same chat. Close the old tab afterwards so you don’t type in both.")
             }
         }
         .controlSize(.small)

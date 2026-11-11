@@ -17,12 +17,17 @@ import Foundation
 /// directory with no shell characters in it. Sources: docs.warp.dev/terminal/sessions/launch-configurations
 /// (the format, the folder, `cwd` absolute) and docs.warp.dev/terminal/more-features/uri-scheme,
 /// and the owner's Mac on 2026-11-10.
+///
+/// Any local process could set `FOCUSPILOT_WINDOW` to another window's
+/// token; the most that does is make Go to agent raise a different
+/// FocusPilot window.
 public struct WarpLaunch: Equatable, Sendable {
     /// Eight lowercase hex digits, new for each window (`newToken`).
-    public let token: String
+    public private(set) var token: String
     public let taskID: Int64
     /// "FocusPilot · Write chapter 2 · 3fa9c01b", as Warp shows it on the window.
-    public let windowTitle: String
+    public private(set) var windowTitle: String
+    private let taskTitle: String
     /// Standardized, absolute and existing when this was made.
     public let folder: String
     /// The Claude Code session to resume, a UUID; nil starts a new chat.
@@ -36,6 +41,7 @@ public struct WarpLaunch: Equatable, Sendable {
               let folder = Self.usableFolder(folder, fileManager: fileManager) else { return nil }
         self.token = token
         self.taskID = taskID
+        self.taskTitle = taskTitle
         windowTitle = AgentWorkspace.warpWindowTitle(taskTitle: taskTitle, token: token)
         self.folder = folder
         resumedSession = session
@@ -117,11 +123,17 @@ public struct WarpLaunch: Equatable, Sendable {
     }
 
     /// Writes the configuration into `directory`, made if missing. Returns
-    /// the file.
+    /// the file. A window never takes over another's file: if the token is
+    /// taken, a new one is made, a few times at most.
     @discardableResult
-    public func write(into directory: URL, fileManager: FileManager = .default) throws -> URL {
+    public mutating func write(into directory: URL, fileManager: FileManager = .default) throws -> URL {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        for _ in 0..<5 where fileManager.fileExists(atPath: Self.file(token, in: directory).path) {
+            token = Self.newToken()
+            windowTitle = AgentWorkspace.warpWindowTitle(taskTitle: taskTitle, token: token)
+        }
         let file = Self.file(token, in: directory)
+        guard !fileManager.fileExists(atPath: file.path) else { throw CocoaError(.fileWriteFileExists) }
         try Data(yaml.utf8).write(to: file, options: .atomic)
         return file
     }
@@ -138,8 +150,13 @@ public struct WarpLaunch: Equatable, Sendable {
         return configuration(at: file(token, in: directory)).flatMap { windowTitle(inConfiguration: $0) }
     }
 
-    private static func configuration(at file: URL) -> String? {
-        guard let data = try? Data(contentsOf: file), data.count <= 64 * 1024 else { return nil }
+    /// The file's text, if it is a regular file (not a link, pipe or
+    /// device) of at most 64 KB.
+    private static func configuration(at file: URL, fileManager: FileManager = .default) -> String? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: file.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.size] as? NSNumber)?.intValue ?? .max <= 64 * 1024,
+              let data = try? Data(contentsOf: file) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
@@ -154,6 +171,26 @@ public struct WarpLaunch: Equatable, Sendable {
         guard let command = value(of: "- exec: ", in: text) else { return nil }
         let prefix = taskVariable + "="
         return command.split(separator: " ").first { $0.hasPrefix(prefix) }.flatMap { Int64($0.dropFirst(prefix.count)) }
+    }
+
+    /// The session the command resumes, read back; nil for a new chat.
+    static func resumedSession(inConfiguration text: String) -> String? {
+        guard let words = value(of: "- exec: ", in: text)?.split(separator: " "),
+              let flag = words.firstIndex(of: "--resume"), flag + 1 < words.count else { return nil }
+        let session = String(words[flag + 1])
+        return isSessionID(session) ? session : nil
+    }
+
+    /// A window's configuration on disk, as Go to agent and the panel need it.
+    public struct OnDisk: Hashable, Sendable {
+        public var token: String
+        /// The Claude Code session it resumes; nil for a new chat.
+        public var resumedSession: String?
+
+        public init(token: String, resumedSession: String? = nil) {
+            self.token = token
+            self.resumedSession = resumedSession
+        }
     }
 
     private static func value(of key: String, in text: String) -> String? {
@@ -175,6 +212,7 @@ public struct WarpLaunch: Equatable, Sendable {
         var modified: Date?
         /// The task its command names; nil if unreadable.
         var taskID: Int64?
+        var resumedSession: String?
     }
 
     /// The files to remove: per-task configurations from before windows had
@@ -200,20 +238,23 @@ public struct WarpLaunch: Equatable, Sendable {
     }
 
     /// Removes the stale configurations in `directory` (`stale`) and returns
-    /// the tokens of the windows still there.
+    /// the windows still there.
     @discardableResult
     public static func removeStale(referenced: Set<String>, openTasks: Set<Int64>, in directory: URL, now: Date = .now,
-                                   fileManager: FileManager = .default) -> Set<String> {
+                                   fileManager: FileManager = .default) -> Set<OnDisk> {
         guard let names = try? fileManager.contentsOfDirectory(atPath: directory.path) else { return [] }
         let files = names.filter { $0.hasPrefix("focuspilot-") && $0.hasSuffix(".yaml") }.map { name in
             let url = directory.appendingPathComponent(name)
             let modified = (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-            return Listed(name: name, modified: modified,
-                          taskID: token(inFileName: name) == nil ? nil : configuration(at: url).flatMap { taskID(inConfiguration: $0) })
+            let text = token(inFileName: name) == nil ? nil : configuration(at: url, fileManager: fileManager)
+            return Listed(name: name, modified: modified, taskID: text.flatMap { taskID(inConfiguration: $0) },
+                          resumedSession: text.flatMap { resumedSession(inConfiguration: $0) })
         }
         let gone = Set(stale(files, referenced: referenced, openTasks: openTasks, now: now))
         for name in gone { try? fileManager.removeItem(at: directory.appendingPathComponent(name)) }
-        return Set(files.map(\.name).filter { !gone.contains($0) }.compactMap { token(inFileName: $0) })
+        return Set(files.filter { !gone.contains($0.name) }.compactMap { file in
+            token(inFileName: file.name).map { OnDisk(token: $0, resumedSession: file.resumedSession) }
+        })
     }
 
     /// The folder, standardized, if it is absolute, exists as a directory and

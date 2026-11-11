@@ -223,13 +223,14 @@ extension AppModel {
 
     /// Writes the window's launch configuration and asks Warp to open it.
     private func open(_ launch: WarpLaunch) -> Bool {
+        var launch = launch
         do {
             try launch.write(into: WarpLaunch.standardDirectory)
         } catch {
             agentNotice = "Could not save Warp’s launch configuration: \(error.localizedDescription)"
             return false
         }
-        warpWindowsOnDisk.insert(launch.token)
+        warpWindowsOnDisk.insert(WarpLaunch.OnDisk(token: launch.token, resumedSession: launch.resumedSession))
         guard let url = launch.url, NSWorkspace.shared.open(url) else {
             agentNotice = "Warp didn’t open the new window."
             return false

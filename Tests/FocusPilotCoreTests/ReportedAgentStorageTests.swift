@@ -20,10 +20,11 @@ struct ReportedAgentStorageTests {
 
     private func report(_ status: AgentReport.Status, session: String = "s1", folder: String? = "/tmp/elsewhere",
                         summary: String? = nil, taskID: Int64? = nil, label: String = "Claude Code · nlp",
-                        fallback: Bool = false, at reportedAt: Date? = nil) async throws -> AgentReportReceipt? {
-        let report = AgentReport(source: .claudeCodeHook, status: status, label: label, key: session,
+                        fallback: Bool = false, at reportedAt: Date? = nil, window: String? = nil,
+                        source: AgentSource = .claudeCodeHook) async throws -> AgentReportReceipt? {
+        let report = AgentReport(source: source, status: status, label: label, key: session,
                                  folder: folder, summary: summary, terminal: TerminalPlace(app: "WarpTerminal"),
-                                 taskID: taskID, labelIsFallback: fallback, reportedAt: reportedAt)
+                                 taskID: taskID, labelIsFallback: fallback, reportedAt: reportedAt, warpWindow: window)
         return try await repository.recordAgentReport(try report.sanitized().report)
     }
 
@@ -43,6 +44,29 @@ struct ReportedAgentStorageTests {
         try await repository.setAgentMonitoring(false)
         #expect(try await report(.done) == nil)
         #expect(try await repository.reportedAgents().first?.reportedState == .working)
+    }
+
+    // MARK: Warp windows
+
+    @Test func aNewerClaudeCodeReportWithoutTheWindowClearsIt() async throws {
+        try await repository.setAgentMonitoring(true)
+        _ = try await report(.working, window: "3fa9c01b")
+        #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
+        // An older report from before the window, arriving late, leaves it.
+        _ = try await report(.done, at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
+        // The chat was quit and resumed in an ordinary tab.
+        clock.set(wednesdayMorningInBogota.addingTimeInterval(60))
+        _ = try await report(.working)
+        #expect(try await repository.reportedAgents().first?.warpWindow == nil)
+    }
+
+    @Test func aCommandReportWithoutTheWindowKeepsIt() async throws {
+        try await repository.setAgentMonitoring(true)
+        _ = try await report(.working, window: "3fa9c01b", source: .command)
+        clock.set(wednesdayMorningInBogota.addingTimeInterval(60))
+        _ = try await report(.done, source: .command)
+        #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
     }
 
     @Test func reportsFromOneSessionUpdateOneAgent() async throws {

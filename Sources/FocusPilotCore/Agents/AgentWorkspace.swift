@@ -95,23 +95,27 @@ public enum AgentWorkspace {
     /// for this agent (`canResume`).
     public static func warpNotice(folder: String?, canOpenOwnWindow: Bool) -> String {
         let place = folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
-        let hint = canOpenOwnWindow ? " So Go to agent can bring this chat forward, use Open in Its Own Window when it isn’t working." : ""
+        let hint = canOpenOwnWindow ? " So Go to agent can bring this chat forward, use Open in Its Own Window once its turn has ended." : ""
         return "Warp is in front, but FocusPilot can’t pick a tab, so look for the one\(place).\(hint)"
     }
 
-    /// Whether a Claude Code chat FocusPilot didn't open can be resumed in a
-    /// window of its own: its key is Claude Code's session ID, a UUID, it
-    /// has a folder, and it has no window FocusPilot opened. Its state is
-    /// checked by the panel, since it changes with time.
-    public static func canResume(_ agent: ReportedAgent, windowsOnDisk: Set<String>) -> Bool {
-        agent.source == .claudeCodeHook && WarpLaunch.isSessionID(agent.key) && agent.folder != nil
-            && !(agent.warpWindow.map(windowsOnDisk.contains) ?? false)
+    /// Whether a Claude Code chat in Warp that FocusPilot didn't open can be
+    /// resumed in a window of its own: its key is Claude Code's session ID,
+    /// a UUID, it has a folder, it has no window FocusPilot opened, and no
+    /// window waits to resume it already (so a second click doesn't open a
+    /// second). Terminal and iTerm2 already reach the exact tab. Its state
+    /// is checked by the panel, since it changes with time.
+    public static func canResume(_ agent: ReportedAgent, windowsOnDisk: Set<WarpLaunch.OnDisk>) -> Bool {
+        agent.source == .claudeCodeHook && apps[agent.terminal.app ?? ""] == warp
+            && WarpLaunch.isSessionID(agent.key) && agent.folder != nil
+            && !windowsOnDisk.contains { $0.token == agent.warpWindow || $0.resumedSession == agent.key }
     }
 
-    /// Resuming moves the chat; while it is working the old tab is still
-    /// busy, so the panel waits until it is not.
+    /// Resuming starts a second Claude Code on the session, so only once
+    /// its turn has ended: Ready or Failed. Needs you may be a permission
+    /// prompt mid-turn, and Unknown may still be running.
     public static func canResumeNow(_ state: ReportedAgentState) -> Bool {
-        state != .working
+        state == .ready || state == .failed
     }
 
     /// The folder a new Claude Code window for a task starts in: where an

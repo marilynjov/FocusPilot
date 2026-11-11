@@ -52,9 +52,9 @@ final class AppModel {
     @ObservationIgnored var askedForAccessibility = false
     /// When Warp's launch configurations were last tidied, and from what.
     @ObservationIgnored var lastWarpTidy: (inputs: WarpTidyInputs, at: Date)?
-    /// Tokens of the Warp windows whose launch configurations are on disk,
-    /// as last tidied or written.
-    var warpWindowsOnDisk: Set<String> = []
+    /// The Warp windows whose launch configurations are on disk, as last
+    /// tidied or written.
+    var warpWindowsOnDisk: Set<WarpLaunch.OnDisk> = []
     /// Set when a session command fails; shown by the session surfaces.
     var sessionError: String?
     /// Asks the planning window to show the Start focus sheet.

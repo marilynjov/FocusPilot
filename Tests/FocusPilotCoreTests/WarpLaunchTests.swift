@@ -138,7 +138,7 @@ final class WarpLaunchTests {
 
     @Test func writingMakesTheDirectory() throws {
         let directory = folder.appendingPathComponent("warp/launch_configurations")
-        let launch = try #require(WarpLaunch(token: "0000000b", taskID: 4, taskTitle: "Old", folder: folder.path))
+        var launch = try #require(WarpLaunch(token: "0000000b", taskID: 4, taskTitle: "Old", folder: folder.path))
         let file = try launch.write(into: directory)
         #expect(file.lastPathComponent == "focuspilot-window-0000000b.yaml")
         #expect(try String(contentsOf: file, encoding: .utf8) == launch.yaml)
@@ -160,8 +160,8 @@ final class WarpLaunchTests {
     @Test func goToAgentReadsTheTitleItWroteSoARenameDoesNotLoseTheWindow() throws {
         let directory = folder.appendingPathComponent("launch_configurations")
         #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01b", in: directory) == nil)
-        try #require(WarpLaunch(token: "3fa9c01b", taskID: 12, taskTitle: "Old \"name\" #1", folder: folder.path))
-            .write(into: directory)
+        var launch = try #require(WarpLaunch(token: "3fa9c01b", taskID: 12, taskTitle: "Old \"name\" #1", folder: folder.path))
+        try launch.write(into: directory)
         #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01b", in: directory) == "FocusPilot · Old \"name\" #1 · 3fa9c01b")
         #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01c", in: directory) == nil)
         #expect(WarpLaunch.windowTitle(ofWindow: "../../x", in: directory) == nil)
@@ -197,15 +197,15 @@ final class WarpLaunchTests {
 
     @Test func tidyingOnlyTouchesFocusPilotsFiles() throws {
         let directory = folder.appendingPathComponent("launch_configurations")
-        let kept = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path))
-        let done = try #require(WarpLaunch(token: "0000000b", taskID: 9, taskTitle: "Old", folder: folder.path))
+        var kept = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path))
+        var done = try #require(WarpLaunch(token: "0000000b", taskID: 9, taskTitle: "Old", folder: folder.path))
         try kept.write(into: directory)
         try done.write(into: directory)
         for other in ["mine.yaml", "focuspilot-task-3.yaml", "focuspilot-window-0000000c.yml"] {
             try Data().write(to: directory.appendingPathComponent(other))
         }
         let remaining = WarpLaunch.removeStale(referenced: [], openTasks: [2], in: directory)
-        #expect(remaining == ["0000000a"])
+        #expect(remaining == [.init(token: "0000000a")])
         #expect(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
             == ["focuspilot-window-0000000a.yaml", "mine.yaml", "focuspilot-window-0000000c.yml"])
         // A missing directory is left alone.
@@ -214,23 +214,61 @@ final class WarpLaunchTests {
 
     // MARK: Resuming a chat elsewhere
 
-    @Test func onlyAClaudeCodeChatWithASessionUUIDAndNoWindowCanBeResumed() {
-        func agent(_ source: AgentSource = .claudeCodeHook, key: String = "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b",
-                   folder: String? = "/p", window: String? = nil) -> ReportedAgent {
+    @Test func onlyAClaudeCodeChatInWarpWithASessionUUIDAndNoWindowCanBeResumed() {
+        let session = "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b"
+        func agent(_ source: AgentSource = .claudeCodeHook, key: String = session, folder: String? = "/p",
+                   app: String = "WarpTerminal", window: String? = nil) -> ReportedAgent {
             ReportedAgent(id: 1, source: source, key: key, label: "Claude Code · p", folder: folder, taskID: 2,
                           isLinkedByOwner: false, reportedState: .ready, lastMessage: nil, lastReportAt: .now,
-                          stateChangedAt: .now, terminal: TerminalPlace(app: "WarpTerminal"), warpWindow: window)
+                          stateChangedAt: .now, terminal: TerminalPlace(app: app), warpWindow: window)
         }
         #expect(AgentWorkspace.canResume(agent(), windowsOnDisk: []))
         #expect(!AgentWorkspace.canResume(agent(.command), windowsOnDisk: []))
         #expect(!AgentWorkspace.canResume(agent(key: "abc"), windowsOnDisk: []))
         #expect(!AgentWorkspace.canResume(agent(folder: nil), windowsOnDisk: []))
-        #expect(!AgentWorkspace.canResume(agent(window: "0000000a"), windowsOnDisk: ["0000000a"]))
+        // Terminal and iTerm2 already reach the exact tab.
+        #expect(!AgentWorkspace.canResume(agent(app: "iTerm.app"), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResume(agent(window: "0000000a"), windowsOnDisk: [.init(token: "0000000a")]))
         // Its window's configuration is gone: it can be given a new one.
         #expect(AgentWorkspace.canResume(agent(window: "0000000a"), windowsOnDisk: []))
-        #expect(!AgentWorkspace.canResumeNow(.working))
-        #expect(AgentWorkspace.canResumeNow(.ready) && AgentWorkspace.canResumeNow(.needsYou)
-            && AgentWorkspace.canResumeNow(.unknown))
+        // A window already waits to resume it: no second one.
+        #expect(!AgentWorkspace.canResume(agent(), windowsOnDisk: [.init(token: "0000000b", resumedSession: session)]))
+        #expect(AgentWorkspace.canResumeNow(.ready) && AgentWorkspace.canResumeNow(.failed))
+        #expect(!AgentWorkspace.canResumeNow(.working) && !AgentWorkspace.canResumeNow(.needsYou)
+            && !AgentWorkspace.canResumeNow(.unknown))
+    }
+
+    @Test func aTakenTokenIsNeverOverwritten() throws {
+        let directory = folder.appendingPathComponent("launch_configurations")
+        var first = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path))
+        try first.write(into: directory)
+        var second = try #require(WarpLaunch(token: "0000000a", taskID: 3, taskTitle: "Other", folder: folder.path))
+        let file = try second.write(into: directory)
+        #expect(second.token != "0000000a")
+        #expect(second.windowTitle == "FocusPilot · Other · \(second.token)")
+        #expect(file.lastPathComponent == "focuspilot-window-\(second.token).yaml")
+        #expect(WarpLaunch.windowTitle(ofWindow: "0000000a", in: directory) == "FocusPilot · Work · 0000000a")
+    }
+
+    @Test func onlyARegularFileIsRead() throws {
+        let directory = folder.appendingPathComponent("launch_configurations")
+        var real = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path))
+        let file = try real.write(into: directory)
+        try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("focuspilot-window-0000000b.yaml"),
+                                                   withDestinationURL: file)
+        #expect(WarpLaunch.windowTitle(ofWindow: "0000000b", in: directory) == nil)
+        try Data(count: 64 * 1024 + 1).write(to: directory.appendingPathComponent("focuspilot-window-0000000c.yaml"))
+        #expect(WarpLaunch.windowTitle(ofWindow: "0000000c", in: directory) == nil)
+    }
+
+    @Test func tidyingReportsWhichSessionAWindowResumes() throws {
+        let directory = folder.appendingPathComponent("launch_configurations")
+        let session = "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b"
+        var resumed = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path,
+                                              resuming: session))
+        try resumed.write(into: directory)
+        #expect(WarpLaunch.removeStale(referenced: [], openTasks: [2], in: directory)
+            == [.init(token: "0000000a", resumedSession: session)])
     }
 
     @Test func onlyAnExactTitleMatches() {

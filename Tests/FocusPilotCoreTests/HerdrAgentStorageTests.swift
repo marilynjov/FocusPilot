@@ -346,3 +346,30 @@ struct OwnerMigrationV16Tests {
         #expect(item.agentLabel == "ablation")
     }
 }
+
+@Suite("Owner schema migration to v17")
+struct OwnerMigrationV17Tests {
+    @Test func agentsReportedBeforeTheMigrationHaveNoWindowUntilOneIsReported() async throws {
+        let location = StorageLocation(directory: try makeTemporaryDirectory())
+        let oldDatabase = try DatabaseQueue(path: location.ownerDatabaseURL.path)
+        try OwnerSchema.migrator.migrate(oldDatabase, upTo: "owner-v16-review-opened")
+        try await oldDatabase.write { db in
+            try db.execute(sql: """
+                INSERT INTO reportedAgent (source, agentKey, label, folder, state, firstReportAt, lastReportAt, stateChangedAt)
+                VALUES ('claudeCodeHook', 's1', 'Claude Code · nlp', '/tmp/nlp', 'working',
+                        '2026-11-10 14:00:00.000', '2026-11-10 14:00:00.000', '2026-11-10 14:00:00.000')
+                """)
+        }
+        try oldDatabase.close()
+
+        let repository = try TaskRepository(location: location, now: { wednesdayMorningInBogota })
+        let agent = try #require(try await repository.reportedAgents().first)
+        #expect(agent.warpWindow == nil)
+        #expect(agent.label == "Claude Code · nlp")
+
+        try await repository.setAgentMonitoring(true)
+        _ = try await repository.recordAgentReport(AgentReport(source: .claudeCodeHook, status: .working, label: "Claude Code · nlp",
+                                                               key: "s1", folder: "/tmp/nlp", warpWindow: "3fa9c01b"))
+        #expect(try await repository.reportedAgents().map(\.warpWindow) == ["3fa9c01b"])
+    }
+}

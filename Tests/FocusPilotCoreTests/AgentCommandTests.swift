@@ -211,16 +211,16 @@ final class AgentCommandTests {
         #expect(try await repository.reportedAgents().first?.taskID == nil)
     }
 
-    @Test func theWindowTokenIsStoredAndKeptByReportsWithout() async throws {
+    @Test func theWindowTokenIsStoredUntilTheChatReportsWithout() async throws {
         try await startApp()
         let id = try await repository.addTask(NewTask(title: "Work")).id!
         _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
                       environment: ["FOCUSPILOT_TASK": String(id), "FOCUSPILOT_WINDOW": "3fa9c01b"])
         #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
-        // The same chat reporting from its old tab, without the variable, keeps it.
+        // The same chat reporting from an ordinary tab: it left the window.
         _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload)
         let agent = try #require(try await repository.reportedAgents().first)
-        #expect(agent.warpWindow == "3fa9c01b")
+        #expect(agent.warpWindow == nil)
         #expect(agent.taskID == id)
 
         _ = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_WINDOW": "0000000a"])
