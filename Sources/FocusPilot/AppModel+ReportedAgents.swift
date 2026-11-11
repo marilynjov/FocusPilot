@@ -134,20 +134,20 @@ extension AppModel {
 
     /// Brings the agent's terminal forward: the exact Terminal or iTerm2
     /// tab when its report named the terminal device, the Warp window
-    /// FocusPilot started for its task, else the app. Only ever for the
+    /// FocusPilot opened for the chat, else the app. Only ever for the
     /// owner's click.
     func goToAgent(_ agentID: Int64, from click: AgentClick) async {
         if reportedAgents.first(where: { $0.id == agentID }) == nil { await refresh() }
         guard let agent = reportedAgents.first(where: { $0.id == agentID }) else {
             return tell("FocusPilot no longer has this agent.", from: click)
         }
-        // The title FocusPilot gave the task's window, if it started one.
-        let window = agent.taskID.flatMap { WarpLaunch.windowTitle(ofTask: $0, in: WarpLaunch.standardDirectory) }
+        // The title FocusPilot gave the chat's own window, if it opened one.
+        let window = agent.warpWindow.flatMap { WarpLaunch.windowTitle(ofWindow: $0, in: WarpLaunch.standardDirectory) }
         let notice: String? = switch AgentWorkspace.action(for: agent.terminal, warpWindow: window) {
         case .none(let message): message
         case .activate(let app): activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
         case .tab(let app, let tty): await selectTab(tty, in: app)
-        case .window(let app, let title): AgentWorkspace.notice(after: raiseWindow(titled: title, in: app), folder: agent.folder)
+        case .window(let app, let title): AgentWorkspace.notice(after: raiseWindow(titled: title, in: app))
         }
         if let notice { tell(notice, from: click) } else { agentNotice = nil }
     }
@@ -177,45 +177,77 @@ extension AppModel {
                                           projectFolder: project, isUsable: { WarpLaunch.usableFolder($0) != nil })
     }
 
-    /// Starts Claude Code for the task in a new Warp window of its own,
-    /// titled after the task, so Go to agent can bring that window back
-    /// (`WarpLaunch`). In `claudeCodeFolder`, or one the owner chooses when
-    /// there is none or `choosingFolder`. Only for the owner's click; the
-    /// agent's reports then come linked to the task.
+    /// Starts Claude Code for the task in a new Warp window of its own, so
+    /// Go to agent can bring that window back (`WarpLaunch`). In
+    /// `claudeCodeFolder`, or one the owner chooses when there is none or
+    /// `choosingFolder`. Only for the owner's click; the agent's reports
+    /// then come linked to the task and name the window.
     func startClaudeCode(for task: TodayItem, choosingFolder: Bool = false) {
-        guard isAgentMonitoringOn else {
-            agentNotice = "Turn on Agent monitoring in Settings › General to start Claude Code from FocusPilot."
+        guard canOpenWarpWindows(),
+              let folder = (choosingFolder ? nil : claudeCodeFolder(for: task)) ?? chooseFolder(for: task)
+        else { return }
+        guard let launch = WarpLaunch(taskID: task.id, taskTitle: task.title, folder: folder) else {
+            agentNotice = "FocusPilot can’t start Claude Code in that folder. Choose one whose path has no quotes or any of $ ; & | < > ! ` ~ * ? [ ] { } ( ) #."
             return
+        }
+        if open(launch) { agentNotice = nil }
+    }
+
+    /// Moves a Claude Code chat FocusPilot didn't open into a Warp window of
+    /// its own, resuming the same session there (`claude --resume`, which
+    /// keeps the session's ID, so it stays this agent). Only for the
+    /// owner's click; the old tab is the owner's to close.
+    func openInOwnWindow(_ agent: ReportedAgent, task: TodayItem) {
+        guard AgentWorkspace.canResume(agent, windowsOnDisk: warpWindowsOnDisk), let folder = agent.folder,
+              canOpenWarpWindows()
+        else { return }
+        guard let launch = WarpLaunch(taskID: task.id, taskTitle: task.title, folder: folder, resuming: agent.key) else {
+            agentNotice = "FocusPilot can’t open this chat in its own window: its folder’s path has quotes or one of $ ; & | < > ! ` ~ * ? [ ] { } ( ) #, or no longer exists."
+            return
+        }
+        if open(launch) { agentNotice = "Opened in its own window. Close the old tab so you don’t type in both." }
+    }
+
+    /// Agent monitoring is on and Warp is installed, or the owner is told.
+    private func canOpenWarpWindows() -> Bool {
+        guard isAgentMonitoringOn else {
+            agentNotice = "Turn on Agent monitoring in Settings › General to open Claude Code from FocusPilot."
+            return false
         }
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: AgentWorkspace.warp.bundleID) != nil else {
-            agentNotice = "Warp isn’t installed, so FocusPilot can’t start Claude Code in it."
-            return
+            agentNotice = "Warp isn’t installed, so FocusPilot can’t open Claude Code in it."
+            return false
         }
-        guard let folder = (choosingFolder ? nil : claudeCodeFolder(for: task)) ?? chooseFolder(for: task) else { return }
-        guard let launch = WarpLaunch(taskID: task.id, taskTitle: task.title, folder: folder) else {
-            agentNotice = "FocusPilot can’t start Claude Code in that folder. Choose a folder whose path has no quotes or any of $ ; & | < > ! `."
-            return
-        }
+        return true
+    }
+
+    /// Writes the window's launch configuration and asks Warp to open it.
+    private func open(_ launch: WarpLaunch) -> Bool {
         do {
             try launch.write(into: WarpLaunch.standardDirectory)
         } catch {
             agentNotice = "Could not save Warp’s launch configuration: \(error.localizedDescription)"
-            return
+            return false
         }
+        warpWindowsOnDisk.insert(launch.token)
         guard let url = launch.url, NSWorkspace.shared.open(url) else {
             agentNotice = "Warp didn’t open the new window."
-            return
+            return false
         }
-        agentNotice = nil
+        return true
     }
 
-    /// Removes the Warp launch configurations of tasks that are done or
-    /// gone, whenever the open tasks change, so their old FOCUSPILOT_TASK
-    /// doesn't linger in Warp's list.
+    /// Removes Warp launch configurations no longer needed (see
+    /// `WarpLaunch.stale`): when the open tasks or the agents' windows
+    /// change, and hourly, since an unreported window goes after a day.
     func removeStaleWarpLaunches() async {
-        guard let open = try? await coordinator?.openTaskIDs(), open != openTaskIDsSeen else { return }
-        openTaskIDsSeen = open
-        WarpLaunch.removeStale(keeping: open, in: WarpLaunch.standardDirectory)
+        guard let open = try? await coordinator?.openTaskIDs() else { return }
+        let inputs = WarpTidyInputs(openTasks: open, referenced: Set(reportedAgents.compactMap(\.warpWindow)))
+        if let last = lastWarpTidy, last.inputs == inputs, Date.now.timeIntervalSince(last.at) < 3600 { return }
+        lastWarpTidy = (inputs, .now)
+        let remaining = WarpLaunch.removeStale(referenced: inputs.referenced, openTasks: open,
+                                               in: WarpLaunch.standardDirectory)
+        if remaining != warpWindowsOnDisk { warpWindowsOnDisk = remaining }
     }
 
     /// Asks the owner for the folder Claude Code works in. Nil if cancelled.
@@ -239,7 +271,10 @@ extension AppModel {
     }
 
     private func warpNotice(_ app: AgentWorkspace.App, _ agent: ReportedAgent) -> String? {
-        app == AgentWorkspace.warp ? AgentWorkspace.warpNotice(folder: agent.folder) : nil
+        app == AgentWorkspace.warp
+            ? AgentWorkspace.warpNotice(folder: agent.folder,
+                                        canOpenOwnWindow: AgentWorkspace.canResume(agent, windowsOnDisk: warpWindowsOnDisk))
+            : nil
     }
 
     /// Selects the tab through AppleScript. The first time, macOS asks the
@@ -318,4 +353,10 @@ final class NotificationClicks: NSObject, UNUserNotificationCenterDelegate {
 
 extension Notification.Name {
     static let goToReportedAgent = Notification.Name("FocusPilot.goToReportedAgent")
+}
+
+/// What tidying Warp's launch configurations depends on.
+struct WarpTidyInputs: Equatable {
+    var openTasks: Set<Int64>
+    var referenced: Set<String>
 }

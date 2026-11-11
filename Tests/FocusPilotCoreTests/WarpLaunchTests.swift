@@ -2,9 +2,10 @@ import Foundation
 import Testing
 @testable import FocusPilotCore
 
-/// Claude Code in a Warp window of its own (decision 0005, 2026-11-10): the
-/// launch configuration Warp runs, which nothing the owner or an agent typed
-/// may change, and finding that window again for Go to agent.
+/// Claude Code chats in Warp windows of their own (decision 0005,
+/// 2026-11-10 and 2026-11-11): the launch configuration Warp runs, which
+/// nothing the owner or an agent typed may change, finding that window again
+/// for Go to agent, and tidying old configurations.
 @Suite("Warp agent windows")
 final class WarpLaunchTests {
     private let folder: URL
@@ -19,22 +20,58 @@ final class WarpLaunchTests {
 
     // MARK: The launch configuration
 
-    @Test func theConfigurationRunsClaudeCodeInTheTasksFolder() throws {
-        let launch = try #require(WarpLaunch(taskID: 12, taskTitle: "Write chapter 2", folder: folder.path))
-        #expect(launch.name == "focuspilot-task-12")
+    @Test func theConfigurationRunsClaudeCodeInItsOwnWindow() throws {
+        let launch = try #require(WarpLaunch(token: "3fa9c01b", taskID: 12, taskTitle: "Write chapter 2", folder: folder.path))
+        #expect(launch.name == "focuspilot-window-3fa9c01b")
         #expect(launch.yaml == """
             ---
-            name: "focuspilot-task-12"
+            name: "focuspilot-window-3fa9c01b"
             windows:
               - tabs:
-                  - title: "FocusPilot · Write chapter 2 (12)"
+                  - title: "FocusPilot · Write chapter 2 · 3fa9c01b"
                     layout:
                       cwd: "\(folder.path)"
                       commands:
-                        - exec: "env FOCUSPILOT_TASK=12 claude"
+                        - exec: "env FOCUSPILOT_TASK=12 FOCUSPILOT_WINDOW=3fa9c01b claude"
 
             """)
-        #expect(launch.url?.absoluteString == "warp://launch/focuspilot-task-12")
+        #expect(launch.url?.absoluteString == "warp://launch/focuspilot-window-3fa9c01b")
+        #expect(WarpLaunch.taskID(inConfiguration: launch.yaml) == 12)
+    }
+
+    @Test func aResumedChatNamesItsSession() throws {
+        let session = "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b"
+        let launch = try #require(WarpLaunch(token: "00ff00aa", taskID: 2, taskTitle: "Work", folder: folder.path,
+                                             resuming: session))
+        #expect(launch.command == "env FOCUSPILOT_TASK=2 FOCUSPILOT_WINDOW=00ff00aa claude --resume \(session)")
+        #expect(launch.yaml.contains(#"- exec: "env FOCUSPILOT_TASK=2 FOCUSPILOT_WINDOW=00ff00aa claude --resume \#(session)""#))
+        #expect(WarpLaunch(taskID: 2, taskTitle: "Work", folder: folder.path, resuming: "abc; rm -rf ~") == nil)
+    }
+
+    @Test func eachWindowGetsANewToken() throws {
+        let first = try #require(WarpLaunch(taskID: 2, taskTitle: "Work", folder: folder.path))
+        let second = try #require(WarpLaunch(taskID: 2, taskTitle: "Work", folder: folder.path))
+        #expect(WarpLaunch.isToken(first.token) && WarpLaunch.isToken(second.token))
+        #expect(first.token != second.token)
+        #expect(first.windowTitle != second.windowTitle)
+    }
+
+    @Test func onlyATokensExactFormIsAccepted() {
+        #expect(WarpLaunch.isToken("3fa9c01b"))
+        for bad in ["3FA9C01B", "3fa9c01", "3fa9c01b0", "3fa9c01g", "", "3fa9c0 b", "../../x", "３fa9c01b"] {
+            #expect(!WarpLaunch.isToken(bad), "\(bad)")
+        }
+        #expect(WarpLaunch(token: "../etc", taskID: 1, taskTitle: "t", folder: folder.path) == nil)
+    }
+
+    @Test func onlyACanonicalUUIDIsASessionID() {
+        #expect(WarpLaunch.isSessionID("0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b"))
+        #expect(WarpLaunch.isSessionID("0F8E1C2A-4B5D-4E6F-8A9B-0C1D2E3F4A5B"))
+        for bad in ["0f8e1c2a4b5d4e6f8a9b0c1d2e3f4a5b", "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5", "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5g",
+                    "{0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b}", "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b --dangerously-skip-permissions",
+                    "-0f8e1c2-4b5d-4e6f-8a9b-0c1d2e3f4a5b", "", "w0t0p0:XYZ"] {
+            #expect(!WarpLaunch.isSessionID(bad), "\(bad)")
+        }
     }
 
     @Test(arguments: [
@@ -49,14 +86,14 @@ final class WarpLaunchTests {
         "'single' & | ; < >",
     ])
     func aHostileTitleStaysInsideItsQuotes(title: String) throws {
-        let launch = try #require(WarpLaunch(taskID: 7, taskTitle: title, folder: folder.path))
+        let launch = try #require(WarpLaunch(token: "0000000a", taskID: 7, taskTitle: title, folder: folder.path))
         let lines = launch.yaml.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         // The same nine lines whatever the title: one document, one command.
         #expect(lines.count == 10)
         #expect(lines.filter { $0 == "---" }.count == 1)
         #expect(lines[4].hasPrefix("      - title: \""))
         #expect(lines.filter { $0.trimmingCharacters(in: .whitespaces).hasPrefix("- exec:") }
-            == [#"            - exec: "env FOCUSPILOT_TASK=7 claude""#])
+            == [#"            - exec: "env FOCUSPILOT_TASK=7 FOCUSPILOT_WINDOW=0000000a claude""#])
         #expect(!launch.yaml.unicodeScalars.contains { $0.properties.generalCategory == .control && $0 != "\n" })
         #expect(!launch.yaml.contains("\u{2028}") && !launch.yaml.contains("\u{2029}"))
         // The title value, read back as YAML would, is the window title.
@@ -65,14 +102,12 @@ final class WarpLaunchTests {
     }
 
     @Test func theTitleIsOneCappedLine() {
-        let title = AgentWorkspace.warpWindowTitle(taskID: 3, taskTitle: "  Fix\n\tthe\u{202E} bug  " + String(repeating: "x", count: 200))
+        let title = AgentWorkspace.warpWindowTitle(taskTitle: "  Fix\n\tthe\u{202E} bug  " + String(repeating: "x", count: 200),
+                                                   token: "3fa9c01b")
         #expect(title.hasPrefix("FocusPilot · Fix the bug xxx"))
-        #expect(title.hasSuffix("x… (3)"))
-        #expect(title.count == "FocusPilot · ".count + AgentWorkspace.warpTitleLimit + " (3)".count)
-        // Two tasks with the same title get different windows.
-        #expect(AgentWorkspace.warpWindowTitle(taskID: 4, taskTitle: "Fix bug")
-            != AgentWorkspace.warpWindowTitle(taskID: 5, taskTitle: "Fix bug"))
-        #expect(AgentWorkspace.warpWindowTitle(taskID: 3, taskTitle: "\n\u{200B}") == "FocusPilot · Task 3")
+        #expect(title.hasSuffix("x… · 3fa9c01b"))
+        #expect(title.count == "FocusPilot · ".count + AgentWorkspace.warpTitleLimit + " · 3fa9c01b".count)
+        #expect(AgentWorkspace.warpWindowTitle(taskTitle: "\n\u{200B}", token: "3fa9c01b") == "FocusPilot · 3fa9c01b")
     }
 
     @Test func quotingEscapesEverythingThatCouldEndTheValue() {
@@ -101,24 +136,21 @@ final class WarpLaunchTests {
         #expect(WarpLaunch(taskID: 0, taskTitle: "t", folder: spaced.path) == nil)
     }
 
-    @Test func writingMakesTheDirectoryAndReplacesTheTasksFile() throws {
+    @Test func writingMakesTheDirectory() throws {
         let directory = folder.appendingPathComponent("warp/launch_configurations")
-        let first = try #require(WarpLaunch(taskID: 4, taskTitle: "Old", folder: folder.path))
-        let file = try first.write(into: directory)
-        #expect(file.lastPathComponent == "focuspilot-task-4.yaml")
-        let second = try #require(WarpLaunch(taskID: 4, taskTitle: "New", folder: folder.path))
-        try second.write(into: directory)
-        #expect(try String(contentsOf: file, encoding: .utf8) == second.yaml)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["focuspilot-task-4.yaml"])
+        let launch = try #require(WarpLaunch(token: "0000000b", taskID: 4, taskTitle: "Old", folder: folder.path))
+        let file = try launch.write(into: directory)
+        #expect(file.lastPathComponent == "focuspilot-window-0000000b.yaml")
+        #expect(try String(contentsOf: file, encoding: .utf8) == launch.yaml)
     }
 
     // MARK: Go to agent
 
-    @Test func onlyAWarpAgentFocusPilotStartedLooksForItsWindow() {
+    @Test func onlyAWarpAgentWithAWindowLooksForIt() {
         let warp = TerminalPlace(app: "WarpTerminal", tty: "/dev/ttys004")
-        #expect(AgentWorkspace.action(for: warp, warpWindow: "FocusPilot · Write chapter 2 (12)")
-            == .window(AgentWorkspace.warp, title: "FocusPilot · Write chapter 2 (12)"))
-        // No launch configuration for its task: no window to look for.
+        #expect(AgentWorkspace.action(for: warp, warpWindow: "FocusPilot · Work · 3fa9c01b")
+            == .window(AgentWorkspace.warp, title: "FocusPilot · Work · 3fa9c01b"))
+        // No window FocusPilot opened: Warp comes forward, with no Accessibility prompt.
         #expect(AgentWorkspace.action(for: warp) == .activate(AgentWorkspace.warp))
         // Other terminals keep going by device.
         #expect(AgentWorkspace.action(for: TerminalPlace(app: "iTerm.app", tty: "/dev/ttys009"), warpWindow: "x")
@@ -127,27 +159,78 @@ final class WarpLaunchTests {
 
     @Test func goToAgentReadsTheTitleItWroteSoARenameDoesNotLoseTheWindow() throws {
         let directory = folder.appendingPathComponent("launch_configurations")
-        #expect(WarpLaunch.windowTitle(ofTask: 12, in: directory) == nil)
-        try #require(WarpLaunch(taskID: 12, taskTitle: "Old \"name\" #1", folder: folder.path)).write(into: directory)
-        #expect(WarpLaunch.windowTitle(ofTask: 12, in: directory) == "FocusPilot · Old \"name\" #1 (12)")
-        #expect(WarpLaunch.windowTitle(ofTask: 13, in: directory) == nil)
+        #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01b", in: directory) == nil)
+        try #require(WarpLaunch(token: "3fa9c01b", taskID: 12, taskTitle: "Old \"name\" #1", folder: folder.path))
+            .write(into: directory)
+        #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01b", in: directory) == "FocusPilot · Old \"name\" #1 · 3fa9c01b")
+        #expect(WarpLaunch.windowTitle(ofWindow: "3fa9c01c", in: directory) == nil)
+        #expect(WarpLaunch.windowTitle(ofWindow: "../../x", in: directory) == nil)
         #expect(WarpLaunch.windowTitle(inConfiguration: "- title: unquoted") == nil)
     }
 
-    @Test func onlyConfigurationsOfTasksNoLongerOpenAreRemoved() throws {
+    @Test func twoChatsOnOneTaskHaveTheirOwnWindows() {
+        let titles: [String?] = ["FocusPilot · Work · 0000000a", "FocusPilot · Work · 0000000b"]
+        #expect(AgentWorkspace.window(titled: "FocusPilot · Work · 0000000b", in: titles) == 1)
+    }
+
+    // MARK: Tidying up
+
+    @Test func staleConfigurationsAreChosenByTaskAndAge() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let old = now.addingTimeInterval(-WarpLaunch.unreportedLifetime - 60)
+        let files: [WarpLaunch.Listed] = [
+            .init(name: "focuspilot-task-12.yaml", modified: now),             // the per-task kind: goes
+            .init(name: "focuspilot-window-0000000a.yaml", modified: old, taskID: 2),  // reported, task open: stays
+            .init(name: "focuspilot-window-0000000b.yaml", modified: now, taskID: 9),  // task done or gone: goes
+            .init(name: "focuspilot-window-0000000c.yaml", modified: now, taskID: 2),  // new, not reported yet: stays
+            .init(name: "focuspilot-window-0000000d.yaml", modified: old, taskID: 2),  // unreported for a day: goes
+            .init(name: "focuspilot-window-0000000e.yaml", modified: old, taskID: 9),  // reported, task done: goes
+            .init(name: "focuspilot-window-ZZ.yaml", modified: old),
+            .init(name: "focuspilot-task-x.yaml", modified: old),
+            .init(name: "focuspilot-task-02.yaml", modified: old),
+            .init(name: "mine.yaml", modified: old),
+        ]
+        let stale = WarpLaunch.stale(files, referenced: ["0000000a", "0000000e"], openTasks: [2], now: now)
+        #expect(Set(stale) == ["focuspilot-task-12.yaml", "focuspilot-window-0000000b.yaml",
+                               "focuspilot-window-0000000d.yaml", "focuspilot-window-0000000e.yaml"])
+    }
+
+    @Test func tidyingOnlyTouchesFocusPilotsFiles() throws {
         let directory = folder.appendingPathComponent("launch_configurations")
-        for id: Int64 in [1, 2, 3] {
-            try #require(WarpLaunch(taskID: id, taskTitle: "t", folder: folder.path)).write(into: directory)
-        }
-        for other in ["mine.yaml", "focuspilot-task-x.yaml", "focuspilot-task-02.yaml", "focuspilot-task-4.yml"] {
+        let kept = try #require(WarpLaunch(token: "0000000a", taskID: 2, taskTitle: "Work", folder: folder.path))
+        let done = try #require(WarpLaunch(token: "0000000b", taskID: 9, taskTitle: "Old", folder: folder.path))
+        try kept.write(into: directory)
+        try done.write(into: directory)
+        for other in ["mine.yaml", "focuspilot-task-3.yaml", "focuspilot-window-0000000c.yml"] {
             try Data().write(to: directory.appendingPathComponent(other))
         }
-        WarpLaunch.removeStale(keeping: [2], in: directory)
+        let remaining = WarpLaunch.removeStale(referenced: [], openTasks: [2], in: directory)
+        #expect(remaining == ["0000000a"])
         #expect(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
-            == ["focuspilot-task-2.yaml", "mine.yaml", "focuspilot-task-x.yaml", "focuspilot-task-02.yaml",
-                "focuspilot-task-4.yml"])
+            == ["focuspilot-window-0000000a.yaml", "mine.yaml", "focuspilot-window-0000000c.yml"])
         // A missing directory is left alone.
-        WarpLaunch.removeStale(keeping: [], in: folder.appendingPathComponent("missing"))
+        #expect(WarpLaunch.removeStale(referenced: [], openTasks: [], in: folder.appendingPathComponent("missing")).isEmpty)
+    }
+
+    // MARK: Resuming a chat elsewhere
+
+    @Test func onlyAClaudeCodeChatWithASessionUUIDAndNoWindowCanBeResumed() {
+        func agent(_ source: AgentSource = .claudeCodeHook, key: String = "0f8e1c2a-4b5d-4e6f-8a9b-0c1d2e3f4a5b",
+                   folder: String? = "/p", window: String? = nil) -> ReportedAgent {
+            ReportedAgent(id: 1, source: source, key: key, label: "Claude Code · p", folder: folder, taskID: 2,
+                          isLinkedByOwner: false, reportedState: .ready, lastMessage: nil, lastReportAt: .now,
+                          stateChangedAt: .now, terminal: TerminalPlace(app: "WarpTerminal"), warpWindow: window)
+        }
+        #expect(AgentWorkspace.canResume(agent(), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResume(agent(.command), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResume(agent(key: "abc"), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResume(agent(folder: nil), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResume(agent(window: "0000000a"), windowsOnDisk: ["0000000a"]))
+        // Its window's configuration is gone: it can be given a new one.
+        #expect(AgentWorkspace.canResume(agent(window: "0000000a"), windowsOnDisk: []))
+        #expect(!AgentWorkspace.canResumeNow(.working))
+        #expect(AgentWorkspace.canResumeNow(.ready) && AgentWorkspace.canResumeNow(.needsYou)
+            && AgentWorkspace.canResumeNow(.unknown))
     }
 
     @Test func onlyAnExactTitleMatches() {
@@ -157,13 +240,14 @@ final class WarpLaunchTests {
     }
 
     @Test func eachSearchOutcomeSaysWhatHappened() throws {
-        #expect(AgentWorkspace.notice(after: .raised, folder: nil) == nil)
-        let notAllowed = try #require(AgentWorkspace.notice(after: .notAllowed, folder: nil))
+        #expect(AgentWorkspace.notice(after: .raised) == nil)
+        let notAllowed = try #require(AgentWorkspace.notice(after: .notAllowed))
         #expect(notAllowed.contains("System Settings › Privacy & Security › Accessibility"))
-        let notFound = try #require(AgentWorkspace.notice(after: .notFound, folder: "/tmp/thesis"))
-        #expect(notFound.contains("in /tmp/thesis"))
-        #expect(notFound.contains("Start Claude Code"))
-        #expect(AgentWorkspace.notice(after: .notRunning, folder: nil) == "Warp isn’t running, so the agent has stopped.")
+        #expect(AgentWorkspace.notice(after: .notFound)?.contains("wasn’t found") == true)
+        #expect(AgentWorkspace.notice(after: .notRunning) == "Warp isn’t running, so the agent has stopped.")
+        let fallback = AgentWorkspace.warpNotice(folder: "/tmp/thesis", canOpenOwnWindow: true)
+        #expect(fallback.contains("in /tmp/thesis") && fallback.contains("Open in Its Own Window"))
+        #expect(!AgentWorkspace.warpNotice(folder: nil, canOpenOwnWindow: false).contains("Open in Its Own Window"))
     }
 
     @Test func theStartFolderIsTheNewestUsableOne() {

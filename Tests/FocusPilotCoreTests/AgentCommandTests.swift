@@ -211,6 +211,36 @@ final class AgentCommandTests {
         #expect(try await repository.reportedAgents().first?.taskID == nil)
     }
 
+    @Test func theWindowTokenIsStoredAndKeptByReportsWithout() async throws {
+        try await startApp()
+        let id = try await repository.addTask(NewTask(title: "Work")).id!
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                      environment: ["FOCUSPILOT_TASK": String(id), "FOCUSPILOT_WINDOW": "3fa9c01b"])
+        #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
+        // The same chat reporting from its old tab, without the variable, keeps it.
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload)
+        let agent = try #require(try await repository.reportedAgents().first)
+        #expect(agent.warpWindow == "3fa9c01b")
+        #expect(agent.taskID == id)
+
+        _ = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_WINDOW": "0000000a"])
+        #expect(try await repository.reportedAgents().first { $0.label == "a" }?.warpWindow == "0000000a")
+    }
+
+    @Test func aBadWindowTokenIsOnlyNoted() async throws {
+        try await startApp()
+        for value in ["../../etc/passwd", "3FA9C01B", "3fa9c01b; rm -rf ~"] {
+            let outcome = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_WINDOW": value])
+            #expect(outcome.status == 0)
+            #expect(outcome.error == "Note: Ignored FOCUSPILOT_WINDOW: it isn’t valid.\n")
+        }
+        let hook = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                             environment: ["FOCUSPILOT_WINDOW": "x"])
+        #expect(hook.status == 0)
+        #expect(hook.output.isEmpty)
+        #expect(try await repository.reportedAgents().allSatisfy { $0.warpWindow == nil })
+    }
+
     // MARK: run
 
     @Test func runReportsWorkingThenTheExitStatus() async throws {

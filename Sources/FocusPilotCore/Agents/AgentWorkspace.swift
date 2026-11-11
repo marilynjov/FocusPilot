@@ -32,10 +32,10 @@ public enum AgentWorkspace {
         case none(String)
     }
 
-    /// `warpWindow` is the title in the launch configuration FocusPilot
-    /// wrote for the agent's task, if there is one (`WarpLaunch.windowTitle`):
-    /// only then may a Warp agent run in a window of its own, so an agent
-    /// FocusPilot never started doesn't ask for Accessibility.
+    /// `warpWindow` is the title in the launch configuration of the window
+    /// the agent reported it runs in, if there is one (`WarpLaunch.windowTitle`):
+    /// only then has a Warp agent a window of its own, so an agent
+    /// FocusPilot never opened doesn't ask for Accessibility.
     public static func action(for terminal: TerminalPlace, warpWindow: String? = nil) -> Action {
         guard let name = terminal.app, let app = apps[name] else {
             return .none(terminal.app.map { "FocusPilot doesn’t know how to bring \($0) forward. Switch to it yourself." }
@@ -48,14 +48,14 @@ public enum AgentWorkspace {
 
     // MARK: Warp windows
 
-    /// "FocusPilot · Write chapter 2 (12)": the title FocusPilot gives the
-    /// Warp window it starts for a task. The task's number keeps two tasks
-    /// with the same title apart; Go to agent reads the title back from the
+    /// "FocusPilot · Write chapter 2 · 3fa9c01b": the title of a Warp window
+    /// FocusPilot opens for a chat. The token tells apart windows of chats
+    /// on the same task; Go to agent reads the title back from the window's
     /// launch configuration, so renaming the task doesn't lose the window.
     /// The task's title is cleaned to one line of visible text and capped;
-    /// one with nothing left is named by its number alone.
-    public static func warpWindowTitle(taskID: Int64, taskTitle: String) -> String {
-        "FocusPilot · " + (AgentText.line(taskTitle, limit: warpTitleLimit).map { "\($0) (\(taskID))" } ?? "Task \(taskID)")
+    /// one with nothing left is left out.
+    public static func warpWindowTitle(taskTitle: String, token: String) -> String {
+        (["FocusPilot", AgentText.line(taskTitle, limit: warpTitleLimit), token].compactMap(\.self)).joined(separator: " · ")
     }
 
     static let warpTitleLimit = 80
@@ -79,20 +79,39 @@ public enum AgentWorkspace {
 
     /// What the owner is told after a Warp window search; nil when the
     /// window came forward.
-    public static func notice(after search: WindowSearch, folder: String?) -> String? {
+    public static func notice(after search: WindowSearch) -> String? {
         switch search {
         case .raised: nil
         case .notAllowed:
             "Warp is in front. To let FocusPilot bring the agent’s own window forward, turn on FocusPilot in System Settings › Privacy & Security › Accessibility."
-        case .notFound: warpNotice(folder: folder)
+        case .notFound:
+            "Warp is in front, but the agent’s own window wasn’t found. It may have closed, or show another tab."
         case .notRunning: "Warp isn’t running, so the agent has stopped."
         }
     }
 
-    /// Warp came forward, but not the agent's own window.
-    public static func warpNotice(folder: String?) -> String {
+    /// Warp came forward, but not the agent's own window, which it has
+    /// none of. `canOpenOwnWindow`: the panel offers Open in Its Own Window
+    /// for this agent (`canResume`).
+    public static func warpNotice(folder: String?, canOpenOwnWindow: Bool) -> String {
         let place = folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
-        return "Warp is in front, but FocusPilot can’t pick a tab, so look for the one\(place). Agents started with Start Claude Code get their own window that Go to agent brings forward."
+        let hint = canOpenOwnWindow ? " So Go to agent can bring this chat forward, use Open in Its Own Window when it isn’t working." : ""
+        return "Warp is in front, but FocusPilot can’t pick a tab, so look for the one\(place).\(hint)"
+    }
+
+    /// Whether a Claude Code chat FocusPilot didn't open can be resumed in a
+    /// window of its own: its key is Claude Code's session ID, a UUID, it
+    /// has a folder, and it has no window FocusPilot opened. Its state is
+    /// checked by the panel, since it changes with time.
+    public static func canResume(_ agent: ReportedAgent, windowsOnDisk: Set<String>) -> Bool {
+        agent.source == .claudeCodeHook && WarpLaunch.isSessionID(agent.key) && agent.folder != nil
+            && !(agent.warpWindow.map(windowsOnDisk.contains) ?? false)
+    }
+
+    /// Resuming moves the chat; while it is working the old tab is still
+    /// busy, so the panel waits until it is not.
+    public static func canResumeNow(_ state: ReportedAgentState) -> Bool {
+        state != .working
     }
 
     /// The folder a new Claude Code window for a task starts in: where an

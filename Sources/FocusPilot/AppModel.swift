@@ -50,8 +50,11 @@ final class AppModel {
     /// Go to agent asked macOS for Accessibility once this launch; after
     /// that the notice says where to turn it on.
     @ObservationIgnored var askedForAccessibility = false
-    /// The open tasks when Warp's launch configurations were last tidied.
-    @ObservationIgnored var openTaskIDsSeen: Set<Int64>?
+    /// When Warp's launch configurations were last tidied, and from what.
+    @ObservationIgnored var lastWarpTidy: (inputs: WarpTidyInputs, at: Date)?
+    /// Tokens of the Warp windows whose launch configurations are on disk,
+    /// as last tidied or written.
+    var warpWindowsOnDisk: Set<String> = []
     /// Set when a session command fails; shown by the session surfaces.
     var sessionError: String?
     /// Asks the planning window to show the Start focus sheet.

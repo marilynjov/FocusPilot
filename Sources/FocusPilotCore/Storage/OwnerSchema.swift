@@ -363,6 +363,13 @@ enum OwnerSchema {
                 table.add(column: "openedAt", .datetime)
             }
         }
+        migrator.registerMigration("owner-v17-warp-windows") { db in
+            // The Warp window FocusPilot opened for a reported agent, by the
+            // token its reports carry (decision 0005, 2026-11-11).
+            try db.alter(table: ReportedAgentRow.databaseTableName) { table in
+                table.add(column: "warpWindow", .text)
+            }
+        }
         return migrator
     }
 

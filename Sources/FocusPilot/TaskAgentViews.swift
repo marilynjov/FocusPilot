@@ -45,7 +45,7 @@ struct TaskAgentInspector: View {
                                       showReviewQueue: showReviewQueue)
                     }
                     ForEach(reported) { agent in
-                        ReportedAgentView(model: model, agent: agent,
+                        ReportedAgentView(model: model, agent: agent, task: task,
                                           reviewCount: model.reviewItems.filter { $0.reportedAgentID == agent.id }.count,
                                           showReviewQueue: showReviewQueue)
                     }
@@ -126,6 +126,7 @@ private struct AgentLinkView: View {
 private struct ReportedAgentView: View {
     let model: AppModel
     let agent: ReportedAgent
+    let task: TodayItem
     let reviewCount: Int
     var showReviewQueue: () -> Void
 
@@ -133,9 +134,11 @@ private struct ReportedAgentView: View {
         VStack(alignment: .leading, spacing: 6) {
             // Redrawn each minute, so Working turns Unknown without a report.
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                details(at: context.date)
+                VStack(alignment: .leading, spacing: 6) {
+                    details(at: context.date)
+                    buttons(at: context.date)
+                }
             }
-            buttons
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
@@ -173,9 +176,9 @@ private struct ReportedAgentView: View {
             .compactMap(\.self).joined(separator: ", "))
     }
 
-    /// Two short rows, so every button shows in the panel's width; results
+    /// Short rows, so every button shows in the panel's width; results
     /// are reached from the sidebar's Review queue (owner feedback, 2026-11-10).
-    private var buttons: some View {
+    private func buttons(at now: Date) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
@@ -188,6 +191,14 @@ private struct ReportedAgentView: View {
             if agent.terminal.app == "WarpTerminal", agent.folder != nil {
                 Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
                     .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
+            }
+            // A chat FocusPilot didn't open, resumed in a window Go to agent
+            // can bring forward (decision 0005, 2026-11-11). Not while it
+            // works: the old tab is still busy with the turn.
+            if model.isAgentMonitoringOn, AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk),
+               AgentWorkspace.canResumeNow(agent.state(at: now)) {
+                Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
+                    .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Offered when it isn’t working, so no turn is cut short. Close the old tab afterwards so you don’t type in both.")
             }
         }
         .controlSize(.small)

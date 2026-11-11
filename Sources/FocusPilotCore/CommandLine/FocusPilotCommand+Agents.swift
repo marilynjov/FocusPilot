@@ -108,7 +108,7 @@ extension FocusPilotCommand {
             source: .command, status: status, label: name, key: options.session,
             folder: options.folder.map(absolute) ?? system.currentDirectory(), summary: options.summary,
             terminal: terminalPlace(app: options.terminal, tty: options.tty, session: options.session), taskID: taskID,
-            reportedAt: now)
+            reportedAt: now, warpWindow: warpWindowFromEnvironment)
         return send(report, notesOnly: false, notes: notes)
     }
 
@@ -117,6 +117,13 @@ extension FocusPilotCommand {
     /// already linked. Checked like `--task`, but a bad value is only noted:
     /// the owner didn't type it. As with `--task`, the app links only to an
     /// open task, and never against the owner's own link or unlink.
+    /// The Warp window FocusPilot opened for this agent, from
+    /// `FOCUSPILOT_WINDOW`. Untrusted like the rest: `sanitized()` keeps only
+    /// a token's exact form and notes anything else.
+    private var warpWindowFromEnvironment: String? {
+        environment[WarpLaunch.windowVariable].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     private func taskFromEnvironment() -> (Int64?, notes: [String]) {
         guard let value = environment[WarpLaunch.taskVariable], !value.isEmpty else { return (nil, []) }
         guard let id = Int64(value), id > 0 else {
@@ -143,6 +150,7 @@ extension FocusPilotCommand {
             report.reportedAt = now
             let (taskID, notes) = taskFromEnvironment()
             report.taskID = taskID
+            report.warpWindow = warpWindowFromEnvironment
             return send(report, notesOnly: true, notes: notes)
         }
     }
