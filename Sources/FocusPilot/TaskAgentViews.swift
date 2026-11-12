@@ -29,9 +29,13 @@ struct TaskAgentInspector: View {
                         .textCase(.uppercase)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Link Agent…", systemImage: "plus") { isLinking = true }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
+                    AddAgentMenu(model: model, task: task, isLinking: $isLinking)
+                }
+                if !model.isAgentMonitoringOn {
+                    Text("Turn on Agent monitoring in Settings › General to start Claude Code from here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if links.isEmpty && reported.isEmpty {
                     Text("No agent is linked to this task. Linked Herdr agents, and agents that report through Claude Code hooks or the focuspilot command, show here and their results go to Review queue.")
@@ -50,7 +54,6 @@ struct TaskAgentInspector: View {
                                           showReviewQueue: showReviewQueue)
                     }
                 }
-                StartClaudeCodeView(model: model, task: task)
                 if !unlinked.isEmpty {
                     UnlinkedAgentsView(model: model, agents: unlinked, taskID: task.id)
                 }
@@ -176,42 +179,54 @@ private struct ReportedAgentView: View {
             .compactMap(\.self).joined(separator: ", "))
     }
 
-    /// Short rows, so every button shows in the panel's width; results
-    /// are reached from the sidebar's Review queue (owner feedback, 2026-11-10).
+    /// Go to agent, and the rest in one "⋯" menu, so the card stays short
+    /// (owner feedback, 2026-11-11). Results are reached from the sidebar's
+    /// Review queue.
     private func buttons(at now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
-                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, its own Warp window if FocusPilot started it, else Warp.")
-                Spacer()
+        let canOpenOwnWindow = model.isAgentMonitoringOn
+            && AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk)
+            && AgentWorkspace.canResumeNow(agent.state(at: now))
+        return HStack(spacing: 8) {
+            Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
+                .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, its own Warp window if FocusPilot started it, else Warp.")
+            Spacer()
+            Menu {
+                // A chat FocusPilot didn't open, resumed in a window Go to
+                // agent can bring forward (decision 0005, 2026-11-11). Only
+                // once its turn has ended, so two Claude Codes never run one
+                // session.
+                if canOpenOwnWindow {
+                    Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
+                        .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Close the old tab afterwards so you don’t type in both.")
+                }
+                if agent.terminal.app == "WarpTerminal", agent.folder != nil {
+                    Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
+                        .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
+                }
+                Divider()
                 Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
-                    .buttonStyle(.link)
-                    .accessibilityLabel("Unlink \(agent.label)")
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-            if agent.terminal.app == "WarpTerminal", agent.folder != nil {
-                Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
-                    .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
-            }
-            // A chat FocusPilot didn't open, resumed in a window Go to agent
-            // can bring forward (decision 0005, 2026-11-11). Only once its
-            // turn has ended, so two Claude Codes never run one session.
-            if model.isAgentMonitoringOn, AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk),
-               AgentWorkspace.canResumeNow(agent.state(at: now)) {
-                Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
-                    .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Offered once its turn has ended (Ready or Failed), so two copies never run the same chat. Close the old tab afterwards so you don’t type in both.")
-            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More for this agent")
+            .accessibilityLabel("More for \(agent.label)")
         }
         .controlSize(.small)
     }
 }
 
-/// Starts Claude Code for the task in a Warp window of its own, which Go
-/// to agent brings back later (decision 0005, owner's choice 2026-11-10).
-/// The menu's item picks another folder. Off with agent monitoring, since
-/// the agent's reports would be refused.
-private struct StartClaudeCodeView: View {
+/// The panel's one "+": start Claude Code for the task in a Warp window of
+/// its own, which Go to agent brings back later (decision 0005, owner's
+/// choice 2026-11-10), in another folder, or link an agent. Kept above the
+/// agents so it is always in view (owner feedback, 2026-11-11). Starting is
+/// off with agent monitoring, since the agent's reports would be refused.
+private struct AddAgentMenu: View {
     let model: AppModel
     let task: TodayItem
+    @Binding var isLinking: Bool
     /// Where it would start, found on disk only when the task or its
     /// agents' folders change, not on every redraw.
     @State private var folder: String?
@@ -223,31 +238,27 @@ private struct StartClaudeCodeView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Menu("Start Claude Code", systemImage: "terminal") {
-                Button("Choose Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
-            } primaryAction: {
-                model.startClaudeCode(for: task)
-            }
-            .fixedSize()
-            .disabled(!model.isAgentMonitoringOn)
-            .help("Opens Claude Code in a new Warp window for this task. Its reports come linked to this task.")
-            Text(caption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        Menu {
+            Button(startTitle, systemImage: "terminal") { model.startClaudeCode(for: task) }
+                .disabled(!model.isAgentMonitoringOn)
+            Button("Start Claude Code in Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
+                .disabled(!model.isAgentMonitoringOn)
+            Divider()
+            Button("Link Agent…") { isLinking = true }
+        } label: {
+            Image(systemName: "plus")
         }
-        .controlSize(.small)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Start Claude Code for this task in its own Warp window, or link an agent")
+        .accessibilityLabel("Add Agent")
         .task(id: folderSources) { folder = model.claudeCodeFolder(for: task) }
     }
 
-    private var caption: String {
-        guard model.isAgentMonitoringOn else {
-            return "Turn on Agent monitoring in Settings › General to start Claude Code from here."
-        }
-        let place = folder.map { "in \(($0 as NSString).abbreviatingWithTildeInPath)" }
-            ?? "in a folder you choose"
-        return "A new Warp window \(place), which Go to agent brings back."
+    private var startTitle: String {
+        guard let folder else { return "Start Claude Code…" }
+        return "Start Claude Code in \((folder as NSString).lastPathComponent)"
     }
 }
 
