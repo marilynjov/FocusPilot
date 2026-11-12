@@ -143,6 +143,13 @@ extension AppModel {
         }
         // The title FocusPilot gave the chat's own window, if it opened one.
         let window = agent.warpWindow.flatMap { WarpLaunch.windowTitle(ofWindow: $0, in: WarpLaunch.standardDirectory) }
+        // Without one, Warp would show whichever window was last used and
+        // cover the notice, so the planning window asks first. Raccoon and
+        // notification clicks come from outside it and just go to Warp.
+        if window == nil, click == .panel, canOfferOwnWindow(agent) {
+            ownWindowOffer = agent
+            return
+        }
         let notice: String? = switch AgentWorkspace.action(for: agent.terminal, warpWindow: window) {
         case .none(let message): message
         case .activate(let app): activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
@@ -198,10 +205,35 @@ extension AppModel {
     /// keeps the session's ID, so it stays this agent). Only for the
     /// owner's click; the old tab is the owner's to close.
     func openInOwnWindow(_ agent: ReportedAgent, task: TodayItem) {
+        openInOwnWindow(agent, taskID: task.id, taskTitle: task.title)
+    }
+
+    /// Open in Its Own Window from Go to agent's question, for the task the
+    /// agent is linked to.
+    func openOfferedWindow(_ agent: ReportedAgent) {
+        guard let taskID = agent.taskID else { return }
+        openInOwnWindow(agent, taskID: taskID, taskTitle: task(taskID)?.title ?? agent.label)
+    }
+
+    /// Go to agent's "Just Show Warp": what it did before asking.
+    func showWarp(for agent: ReportedAgent) {
+        let app = AgentWorkspace.warp
+        agentNotice = activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
+    }
+
+    /// A finished Claude Code chat in Warp, linked to a task, that FocusPilot
+    /// could open in its own window now.
+    private func canOfferOwnWindow(_ agent: ReportedAgent) -> Bool {
+        isAgentMonitoringOn && agent.taskID != nil
+            && AgentWorkspace.canResume(agent, windowsOnDisk: warpWindowsOnDisk)
+            && AgentWorkspace.canResumeNow(agent.state(at: .now))
+    }
+
+    private func openInOwnWindow(_ agent: ReportedAgent, taskID: Int64, taskTitle: String) {
         guard AgentWorkspace.canResume(agent, windowsOnDisk: warpWindowsOnDisk), let folder = agent.folder,
               canOpenWarpWindows()
         else { return }
-        guard let launch = WarpLaunch(taskID: task.id, taskTitle: task.title, folder: folder, resuming: agent.key) else {
+        guard let launch = WarpLaunch(taskID: taskID, taskTitle: taskTitle, folder: folder, resuming: agent.key) else {
             agentNotice = "FocusPilot can’t open this chat in its own window: its folder’s path has quotes or one of $ ; & | < > ! ` ~ * ? [ ] { } ( ) #, or no longer exists."
             return
         }

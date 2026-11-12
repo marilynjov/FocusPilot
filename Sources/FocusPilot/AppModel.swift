@@ -47,6 +47,10 @@ final class AppModel {
     @ObservationIgnored let notificationClicks = NotificationClicks()
     /// Why the last Open agent did nothing, shown where it was clicked.
     var agentNotice: String?
+    /// A Claude Code chat in Warp that Go to agent can't reach, since it
+    /// has no window of its own: the planning window asks whether to open
+    /// it in one before Warp covers FocusPilot (owner feedback, 2026-11-12).
+    var ownWindowOffer: ReportedAgent?
     /// Go to agent asked macOS for Accessibility once this launch; after
     /// that the notice says where to turn it on.
     @ObservationIgnored var askedForAccessibility = false
