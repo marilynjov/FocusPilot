@@ -97,16 +97,39 @@ extension FocusPilotCommand {
             return Outcome(status: 2, error: "The report needs --name <label>.\n\n" + Self.usage)
         }
         var taskID: Int64?
+        var notes: [String] = []
         if let task = options.task {
             guard let id = Int64(task), id > 0 else { return Outcome(status: 2, error: "--task needs a task number.\n") }
             taskID = id
+        } else {
+            (taskID, notes) = taskFromEnvironment()
         }
         let report = AgentReport(
             source: .command, status: status, label: name, key: options.session,
             folder: options.folder.map(absolute) ?? system.currentDirectory(), summary: options.summary,
             terminal: terminalPlace(app: options.terminal, tty: options.tty, session: options.session), taskID: taskID,
-            reportedAt: now)
-        return send(report, notesOnly: false)
+            reportedAt: now, warpWindow: warpWindowFromEnvironment)
+        return send(report, notesOnly: false, notes: notes)
+    }
+
+    /// The task in `FOCUSPILOT_TASK`, set for Claude Code in a Warp window
+    /// FocusPilot started for a task (`WarpLaunch`), so its reports come
+    /// already linked. Checked like `--task`, but a bad value is only noted:
+    /// the owner didn't type it. As with `--task`, the app links only to an
+    /// open task, and never against the owner's own link or unlink.
+    /// The Warp window FocusPilot opened for this agent, from
+    /// `FOCUSPILOT_WINDOW`. Untrusted like the rest: `sanitized()` keeps only
+    /// a token's exact form and notes anything else.
+    private var warpWindowFromEnvironment: String? {
+        environment[WarpLaunch.windowVariable].flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private func taskFromEnvironment() -> (Int64?, notes: [String]) {
+        guard let value = environment[WarpLaunch.taskVariable], !value.isEmpty else { return (nil, []) }
+        guard let id = Int64(value), id > 0 else {
+            return (nil, ["Ignored \(WarpLaunch.taskVariable): it isn’t a task number."])
+        }
+        return (id, [])
     }
 
     /// `--from-claude-hook <event> [--name <label>]`, with the hook's JSON on stdin.
@@ -125,17 +148,21 @@ extension FocusPilotCommand {
         case .report(var report):
             // `now` was taken when the process started, before stdin was read.
             report.reportedAt = now
-            return send(report, notesOnly: true)
+            let (taskID, notes) = taskFromEnvironment()
+            report.taskID = taskID
+            report.warpWindow = warpWindowFromEnvironment
+            return send(report, notesOnly: true, notes: notes)
         }
     }
 
     /// Sends the report. `notesOnly` (hook mode) keeps stdout empty and
     /// turns every failure into status 1.
-    private func send(_ raw: AgentReport, notesOnly: Bool) -> Outcome {
+    private func send(_ raw: AgentReport, notesOnly: Bool, notes earlier: [String] = []) -> Outcome {
         let report: AgentReport
-        let notes: [String]
+        var notes: [String]
         do {
             (report, notes) = try raw.sanitized()
+            notes = earlier + notes
         } catch {
             return Outcome(status: notesOnly ? 1 : 2, error: "The report needs a --name with some text in it.\n")
         }

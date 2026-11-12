@@ -33,4 +33,12 @@ extension TaskRepository {
     public func forgetReportedAgent(_ agentID: Int64) async throws {
         try await ownerDatabase.write { db in try ReportedAgentStore.forget(agentID, in: db) }
     }
+
+    /// Every task not done, so the Warp launch configurations of the rest
+    /// can go (`WarpLaunch.removeStale`).
+    public func openTaskIDs() async throws -> Set<Int64> {
+        try await ownerDatabase.read { db in
+            Set(try Int64.fetchAll(db, sql: "SELECT id FROM task WHERE status != 'done'"))
+        }
+    }
 }

@@ -71,6 +71,15 @@ struct PlanningView: View {
                 if let pending = model.wrapUp { WrapUpSheet(model: model, prompt: pending.prompt) }
             }
         }
+        .alert(model.ownWindowOffer.map { "\($0.label) isn’t in its own window" } ?? "",
+               isPresented: Binding(get: { model.ownWindowOffer != nil }, set: { if !$0 { model.ownWindowOffer = nil } }),
+               presenting: model.ownWindowOffer) { agent in
+            Button("Open in Its Own Window") { model.openOfferedWindow(agent) }
+            Button("Just Show Warp") { model.showWarp(for: agent) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("It doesn’t have a window FocusPilot opened, so FocusPilot can’t pick its tab and Warp would show the window you used last. Opening it in its own window continues the same chat there, and Go to agent goes straight to it from then on. Close the old tab afterwards so you don’t type in both.")
+        }
         .environment(model)
         .task { await model.refresh() }
         .onChange(of: model.requestedPage, initial: true) {

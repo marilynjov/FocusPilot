@@ -47,6 +47,18 @@ final class AppModel {
     @ObservationIgnored let notificationClicks = NotificationClicks()
     /// Why the last Open agent did nothing, shown where it was clicked.
     var agentNotice: String?
+    /// A Claude Code chat in Warp that Go to agent can't reach, since it
+    /// has no window of its own: the planning window asks whether to open
+    /// it in one before Warp covers FocusPilot (owner feedback, 2026-11-12).
+    var ownWindowOffer: ReportedAgent?
+    /// Go to agent asked macOS for Accessibility once this launch; after
+    /// that the notice says where to turn it on.
+    @ObservationIgnored var askedForAccessibility = false
+    /// When Warp's launch configurations were last tidied, and from what.
+    @ObservationIgnored var lastWarpTidy: (inputs: WarpTidyInputs, at: Date)?
+    /// The Warp windows whose launch configurations are on disk, as last
+    /// tidied or written.
+    var warpWindowsOnDisk: Set<WarpLaunch.OnDisk> = []
     /// Set when a session command fails; shown by the session surfaces.
     var sessionError: String?
     /// Asks the planning window to show the Start focus sheet.
@@ -329,6 +341,7 @@ final class AppModel {
             reportedAgents = try await coordinator.reportedAgents()
             isAgentMonitoringOn = try await coordinator.isAgentMonitoringOn()
             pruneAgentsNeedingYou()
+            await removeStaleWarpLaunches()
             taskError = nil
         } catch {
             taskError = "Could not load tasks: \(error.localizedDescription)"
