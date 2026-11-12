@@ -78,7 +78,7 @@ struct PlanningView: View {
             Button("Just Show Warp") { model.showWarp(for: agent) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("It was started in Warp, not from FocusPilot, so FocusPilot can’t pick its tab and Warp would show the window you used last. Opening it in its own window continues the same chat there, and Go to agent goes straight to it from then on. Close the old tab afterwards so you don’t type in both.")
+            Text("It doesn’t have a window FocusPilot opened, so FocusPilot can’t pick its tab and Warp would show the window you used last. Opening it in its own window continues the same chat there, and Go to agent goes straight to it from then on. Close the old tab afterwards so you don’t type in both.")
         }
         .environment(model)
         .task { await model.refresh() }

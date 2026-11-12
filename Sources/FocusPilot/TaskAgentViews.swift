@@ -186,6 +186,7 @@ private struct ReportedAgentView: View {
         let canOpenOwnWindow = model.isAgentMonitoringOn
             && AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk)
             && AgentWorkspace.canResumeNow(agent.state(at: now))
+        let canOpenTab = agent.terminal.app == "WarpTerminal" && agent.folder != nil
         return HStack(spacing: 8) {
             Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
                 .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, its own Warp window if FocusPilot started it, else Warp.")
@@ -197,13 +198,13 @@ private struct ReportedAgentView: View {
                 // session.
                 if canOpenOwnWindow {
                     Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
-                        .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Close the old tab afterwards so you don’t type in both.")
+                        .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Shown once its turn has ended, so two copies never run the same chat. Close the old tab afterwards so you don’t type in both.")
                 }
-                if agent.terminal.app == "WarpTerminal", agent.folder != nil {
+                if canOpenTab {
                     Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
                         .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
                 }
-                Divider()
+                if canOpenOwnWindow || canOpenTab { Divider() }
                 Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -241,8 +242,10 @@ private struct AddAgentMenu: View {
         Menu {
             Button(startTitle, systemImage: "terminal") { model.startClaudeCode(for: task) }
                 .disabled(!model.isAgentMonitoringOn)
-            Button("Start Claude Code in Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
-                .disabled(!model.isAgentMonitoringOn)
+            if folder != nil {
+                Button("Start Claude Code in Another Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
+                    .disabled(!model.isAgentMonitoringOn)
+            }
             Divider()
             Button("Link Agent…") { isLinking = true }
         } label: {
@@ -256,9 +259,11 @@ private struct AddAgentMenu: View {
         .task(id: folderSources) { folder = model.claudeCodeFolder(for: task) }
     }
 
+    /// The folder in full, since two folders may share a name; without one
+    /// the plain item asks for a folder, so the second item isn't shown.
     private var startTitle: String {
         guard let folder else { return "Start Claude Code…" }
-        return "Start Claude Code in \((folder as NSString).lastPathComponent)"
+        return "Start Claude Code in \((folder as NSString).abbreviatingWithTildeInPath)"
     }
 }
 

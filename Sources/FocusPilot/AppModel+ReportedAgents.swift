@@ -209,10 +209,16 @@ extension AppModel {
     }
 
     /// Open in Its Own Window from Go to agent's question, for the task the
-    /// agent is linked to.
+    /// agent is linked to. Checked again with the agent as it is now: the
+    /// chat may have started working while the question was up.
     func openOfferedWindow(_ agent: ReportedAgent) {
-        guard let taskID = agent.taskID else { return }
-        openInOwnWindow(agent, taskID: taskID, taskTitle: task(taskID)?.title ?? agent.label)
+        guard let current = reportedAgents.first(where: { $0.id == agent.id }), canOfferOwnWindow(current),
+              let taskID = current.taskID, let task = task(taskID)
+        else {
+            agentNotice = "This chat can’t be opened in its own window right now: it may be working again. Try once its turn has ended."
+            return
+        }
+        openInOwnWindow(current, taskID: taskID, taskTitle: task.title)
     }
 
     /// Go to agent's "Just Show Warp": what it did before asking.
@@ -221,10 +227,11 @@ extension AppModel {
         agentNotice = activate(app) ? warpNotice(app, agent) : "\(app.name) isn’t running, so the agent has stopped."
     }
 
-    /// A finished Claude Code chat in Warp, linked to a task, that FocusPilot
-    /// could open in its own window now.
+    /// A finished Claude Code chat in Warp, linked to an open task, that
+    /// FocusPilot could open in its own window now. A done task's window
+    /// file would be cleaned up, losing the window.
     private func canOfferOwnWindow(_ agent: ReportedAgent) -> Bool {
-        isAgentMonitoringOn && agent.taskID != nil
+        isAgentMonitoringOn && agent.taskID.flatMap { task($0) } != nil
             && AgentWorkspace.canResume(agent, windowsOnDisk: warpWindowsOnDisk)
             && AgentWorkspace.canResumeNow(agent.state(at: .now))
     }
