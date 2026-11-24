@@ -79,10 +79,13 @@ public struct ReportedAgent: Equatable, Sendable, Identifiable {
     /// When `reportedState` last changed.
     public var stateChangedAt: Date
     public var terminal: TerminalPlace
+    /// The token of the Warp window FocusPilot opened for it, as its
+    /// reports said (`WarpLaunch`); nil if it runs elsewhere.
+    public var warpWindow: String?
 
     public init(id: Int64, source: AgentSource, key: String, label: String, folder: String?, taskID: Int64?,
                 isLinkedByOwner: Bool, reportedState: ReportedAgentState, lastMessage: String?, lastReportAt: Date,
-                stateChangedAt: Date, terminal: TerminalPlace) {
+                stateChangedAt: Date, terminal: TerminalPlace, warpWindow: String? = nil) {
         self.id = id
         self.source = source
         self.key = key
@@ -95,6 +98,7 @@ public struct ReportedAgent: Equatable, Sendable, Identifiable {
         self.lastReportAt = lastReportAt
         self.stateChangedAt = stateChangedAt
         self.terminal = terminal
+        self.warpWindow = warpWindow
     }
 
     /// A working agent that has not reported for this long may have been

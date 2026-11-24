@@ -157,6 +157,90 @@ final class AgentCommandTests {
         #expect(try await repository.reportedAgents().isEmpty)
     }
 
+    // MARK: FOCUSPILOT_TASK
+
+    @Test func aHookInAWindowFocusPilotStartedReportsLinkedToItsTask() async throws {
+        try await startApp()
+        let id = try await repository.addTask(NewTask(title: "Write chapter 2")).id!
+        let outcome = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                                environment: ["TERM_PROGRAM": "WarpTerminal", "FOCUSPILOT_TASK": String(id)])
+
+        #expect(outcome == FocusPilotCommand.Outcome(status: 0))
+        #expect(try await repository.reportedAgents().first?.taskID == id)
+    }
+
+    @Test func taskWinsOverTheEnvironment() async throws {
+        try await startApp()
+        let named = try await repository.addTask(NewTask(title: "Named")).id!
+        let fromEnvironment = try await repository.addTask(NewTask(title: "From environment")).id!
+        let environment = ["FOCUSPILOT_TASK": String(fromEnvironment)]
+
+        let outcome = await run(["agent", "report", "working", "--name", "a", "--task", String(named)], environment: environment)
+        #expect(outcome.output == "Reported a: Working, for “Named”.\n")
+        _ = await run(["agent", "report", "working", "--name", "b"], environment: environment)
+        let agents = try await repository.reportedAgents()
+        #expect(agents.first { $0.label == "a" }?.taskID == named)
+        #expect(agents.first { $0.label == "b" }?.taskID == fromEnvironment)
+    }
+
+    @Test func aBadTaskInTheEnvironmentIsOnlyNoted() async throws {
+        try await startApp()
+        for value in ["12; rm -rf ~", "0", "-3"] {
+            let outcome = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_TASK": value])
+            #expect(outcome.status == 0)
+            #expect(outcome.error == "Note: Ignored FOCUSPILOT_TASK: it isn’t a task number.\n")
+        }
+        let hook = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                             environment: ["FOCUSPILOT_TASK": "x"])
+        #expect(hook.status == 0)
+        #expect(hook.output.isEmpty)
+        // A task that doesn't exist links nothing, as with --task.
+        _ = await run(["agent", "report", "working", "--name", "c"], environment: ["FOCUSPILOT_TASK": "999"])
+        #expect(try await repository.reportedAgents().allSatisfy { $0.taskID == nil })
+    }
+
+    @Test func theOwnersUnlinkHoldsAgainstTheEnvironment() async throws {
+        try await startApp()
+        let id = try await repository.addTask(NewTask(title: "Write chapter 2")).id!
+        let environment = ["FOCUSPILOT_TASK": String(id)]
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload, environment: environment)
+        let agent = try #require(try await repository.reportedAgents().first)
+        try await repository.linkReportedAgent(agent.id, toTask: nil)
+
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload, environment: environment)
+        #expect(try await repository.reportedAgents().first?.taskID == nil)
+    }
+
+    @Test func theWindowTokenIsStoredUntilTheChatReportsWithout() async throws {
+        try await startApp()
+        let id = try await repository.addTask(NewTask(title: "Work")).id!
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                      environment: ["FOCUSPILOT_TASK": String(id), "FOCUSPILOT_WINDOW": "3fa9c01b"])
+        #expect(try await repository.reportedAgents().first?.warpWindow == "3fa9c01b")
+        // The same chat reporting from an ordinary tab: it left the window.
+        _ = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload)
+        let agent = try #require(try await repository.reportedAgents().first)
+        #expect(agent.warpWindow == nil)
+        #expect(agent.taskID == id)
+
+        _ = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_WINDOW": "0000000a"])
+        #expect(try await repository.reportedAgents().first { $0.label == "a" }?.warpWindow == "0000000a")
+    }
+
+    @Test func aBadWindowTokenIsOnlyNoted() async throws {
+        try await startApp()
+        for value in ["../../etc/passwd", "3FA9C01B", "3fa9c01b; rm -rf ~"] {
+            let outcome = await run(["agent", "report", "working", "--name", "a"], environment: ["FOCUSPILOT_WINDOW": value])
+            #expect(outcome.status == 0)
+            #expect(outcome.error == "Note: Ignored FOCUSPILOT_WINDOW: it isn’t valid.\n")
+        }
+        let hook = await run(["agent", "report", "--from-claude-hook", "Stop"], stdin: stopPayload,
+                             environment: ["FOCUSPILOT_WINDOW": "x"])
+        #expect(hook.status == 0)
+        #expect(hook.output.isEmpty)
+        #expect(try await repository.reportedAgents().allSatisfy { $0.warpWindow == nil })
+    }
+
     // MARK: run
 
     @Test func runReportsWorkingThenTheExitStatus() async throws {

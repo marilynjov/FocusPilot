@@ -27,4 +27,8 @@ extension FocusCoordinator {
     public func forgetReportedAgent(_ agentID: Int64) async throws {
         try await repository.forgetReportedAgent(agentID)
     }
+
+    public func openTaskIDs() async throws -> Set<Int64> {
+        try await repository.openTaskIDs()
+    }
 }

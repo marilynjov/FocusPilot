@@ -29,9 +29,13 @@ struct TaskAgentInspector: View {
                         .textCase(.uppercase)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Link Agent…", systemImage: "plus") { isLinking = true }
-                        .buttonStyle(.borderless)
-                        .controlSize(.small)
+                    AddAgentMenu(model: model, task: task, isLinking: $isLinking)
+                }
+                if !model.isAgentMonitoringOn {
+                    Text("Turn on Agent monitoring in Settings › General to start Claude Code from here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if links.isEmpty && reported.isEmpty {
                     Text("No agent is linked to this task. Linked Herdr agents, and agents that report through Claude Code hooks or the focuspilot command, show here and their results go to Review queue.")
@@ -45,7 +49,7 @@ struct TaskAgentInspector: View {
                                       showReviewQueue: showReviewQueue)
                     }
                     ForEach(reported) { agent in
-                        ReportedAgentView(model: model, agent: agent,
+                        ReportedAgentView(model: model, agent: agent, task: task,
                                           reviewCount: model.reviewItems.filter { $0.reportedAgentID == agent.id }.count,
                                           showReviewQueue: showReviewQueue)
                     }
@@ -125,6 +129,7 @@ private struct AgentLinkView: View {
 private struct ReportedAgentView: View {
     let model: AppModel
     let agent: ReportedAgent
+    let task: TodayItem
     let reviewCount: Int
     var showReviewQueue: () -> Void
 
@@ -132,9 +137,11 @@ private struct ReportedAgentView: View {
         VStack(alignment: .leading, spacing: 6) {
             // Redrawn each minute, so Working turns Unknown without a report.
             TimelineView(.periodic(from: .now, by: 60)) { context in
-                details(at: context.date)
+                VStack(alignment: .leading, spacing: 6) {
+                    details(at: context.date)
+                    buttons(at: context.date)
+                }
             }
-            buttons
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
@@ -172,24 +179,91 @@ private struct ReportedAgentView: View {
             .compactMap(\.self).joined(separator: ", "))
     }
 
-    /// Two short rows, so every button shows in the panel's width; results
-    /// are reached from the sidebar's Review queue (owner feedback, 2026-11-10).
-    private var buttons: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
-                    .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, or the app for Warp.")
-                Spacer()
+    /// Go to agent, and the rest in one "⋯" menu, so the card stays short
+    /// (owner feedback, 2026-11-11). Results are reached from the sidebar's
+    /// Review queue.
+    private func buttons(at now: Date) -> some View {
+        let canOpenOwnWindow = model.isAgentMonitoringOn
+            && AgentWorkspace.canResume(agent, windowsOnDisk: model.warpWindowsOnDisk)
+            && AgentWorkspace.canResumeNow(agent.state(at: now))
+        let canOpenTab = agent.terminal.app == "WarpTerminal" && agent.folder != nil
+        return HStack(spacing: 8) {
+            Button("Go to agent") { Task { await model.goToAgent(agent.id, from: .panel) } }
+                .help("Brings the agent’s terminal forward: its exact tab in Terminal or iTerm2, its own Warp window if FocusPilot started it, else Warp.")
+            Spacer()
+            Menu {
+                // A chat FocusPilot didn't open, resumed in a window Go to
+                // agent can bring forward (decision 0005, 2026-11-11). Only
+                // once its turn has ended, so two Claude Codes never run one
+                // session.
+                if canOpenOwnWindow {
+                    Button("Open in Its Own Window") { model.openInOwnWindow(agent, task: task) }
+                        .help("Resumes this Claude Code chat in a new Warp window that Go to agent brings forward. Shown once its turn has ended, so two copies never run the same chat. Close the old tab afterwards so you don’t type in both.")
+                }
+                if canOpenTab {
+                    Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
+                        .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
+                }
+                if canOpenOwnWindow || canOpenTab { Divider() }
                 Button("Unlink") { Task { await model.linkReportedAgent(agent.id, toTask: nil) } }
-                    .buttonStyle(.link)
-                    .accessibilityLabel("Unlink \(agent.label)")
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-            if agent.terminal.app == "WarpTerminal", agent.folder != nil {
-                Button("New Warp Tab Here") { model.openWarpTab(for: agent) }
-                    .help("Opens a new Warp tab in the agent’s folder. It is a new tab, not the agent’s own.")
-            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More for this agent")
+            .accessibilityLabel("More for \(agent.label)")
         }
         .controlSize(.small)
+    }
+}
+
+/// The panel's one "+": start Claude Code for the task in a Warp window of
+/// its own, which Go to agent brings back later (decision 0005, owner's
+/// choice 2026-11-10), in another folder, or link an agent. Kept above the
+/// agents so it is always in view (owner feedback, 2026-11-11). Starting is
+/// off with agent monitoring, since the agent's reports would be refused.
+private struct AddAgentMenu: View {
+    let model: AppModel
+    let task: TodayItem
+    @Binding var isLinking: Bool
+    /// Where it would start, found on disk only when the task or its
+    /// agents' folders change, not on every redraw.
+    @State private var folder: String?
+
+    /// What `claudeCodeFolder` reads, without touching the disk.
+    private var folderSources: [String?] {
+        [String(task.id), task.projectID.flatMap { id in model.projects.first { $0.id == id }?.herdrLink?.cwd }]
+            + model.reportedAgents.filter { $0.taskID == task.id }.map(\.folder)
+    }
+
+    var body: some View {
+        Menu {
+            Button(startTitle, systemImage: "terminal") { model.startClaudeCode(for: task) }
+                .disabled(!model.isAgentMonitoringOn)
+            if folder != nil {
+                Button("Start Claude Code in Another Folder…") { model.startClaudeCode(for: task, choosingFolder: true) }
+                    .disabled(!model.isAgentMonitoringOn)
+            }
+            Divider()
+            Button("Link Agent…") { isLinking = true }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Start Claude Code for this task in its own Warp window, or link an agent")
+        .accessibilityLabel("Add Agent")
+        .task(id: folderSources) { folder = model.claudeCodeFolder(for: task) }
+    }
+
+    /// The folder in full, since two folders may share a name; without one
+    /// the plain item asks for a folder, so the second item isn't shown.
+    private var startTitle: String {
+        guard let folder else { return "Start Claude Code…" }
+        return "Start Claude Code in \((folder as NSString).abbreviatingWithTildeInPath)"
     }
 }
 

@@ -85,11 +85,16 @@ enum ReportedAgentStore {
             row.terminalApp = row.terminalApp ?? report.terminal.app
             row.terminalTTY = row.terminalTTY ?? report.terminal.tty
             row.terminalSession = row.terminalSession ?? report.terminal.sessionID
+            row.warpWindow = row.warpWindow ?? report.warpWindow
         } else {
             row.folder = report.folder ?? row.folder
             row.terminalApp = report.terminal.app ?? row.terminalApp
             row.terminalTTY = report.terminal.tty ?? row.terminalTTY
             row.terminalSession = report.terminal.sessionID ?? row.terminalSession
+            // A newer Claude Code report without the window's token comes
+            // from elsewhere: the chat was quit and resumed in another tab.
+            // While the old window and a new tab both run, it may flip.
+            row.warpWindow = report.warpWindow ?? (report.source == .claudeCodeHook ? nil : row.warpWindow)
             if row.state != state.rawValue { row.stateChangedAt = reportedAt }
             row.state = state.rawValue
             row.lastMessage = report.summary
@@ -189,6 +194,7 @@ struct ReportedAgentRow: Codable, FetchableRecord, MutablePersistableRecord {
     var terminalApp: String? = nil
     var terminalTTY: String? = nil
     var terminalSession: String? = nil
+    var warpWindow: String? = nil
 
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
@@ -199,6 +205,7 @@ struct ReportedAgentRow: Codable, FetchableRecord, MutablePersistableRecord {
                       folder: folder, taskID: taskId, isLinkedByOwner: linkedByOwner,
                       reportedState: ReportedAgentState(rawValue: state) ?? .working, lastMessage: lastMessage,
                       lastReportAt: lastReportAt, stateChangedAt: stateChangedAt,
-                      terminal: TerminalPlace(app: terminalApp, tty: terminalTTY, sessionID: terminalSession))
+                      terminal: TerminalPlace(app: terminalApp, tty: terminalTTY, sessionID: terminalSession),
+                      warpWindow: warpWindow)
     }
 }
