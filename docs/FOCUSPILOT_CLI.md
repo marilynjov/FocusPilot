@@ -62,6 +62,7 @@ The workspace is read from the pane's environment (`HERDR_WORKSPACE_ID`, `HERDR_
 ## How it works
 
 - **The command never opens FocusPilot's databases.** It sends one request over a Unix socket at `~/Library/Application Support/FocusPilot/CommandLine/cli.sock` to the running app, which writes through its `TaskRepository` in one write per add.
+- **One FocusPilot answers.** A copy that starts while another is answering on the socket leaves it to that one and says so in Settings › General › Agent monitoring; a socket left by a crash is replaced. On quit, a copy removes the socket file only if it is still its own (#42).
 - **Owner-only access:** the folder is `0700` and the socket `0600`, and the app refuses connections from other users.
 - **Inbox:** `CommandLine/inbox.jsonl` in the same folder (`0600`).
 - **Testing:** set `FOCUSPILOT_DATA_DIR` to another folder to point both the app and the command at different data, so the owner's data is untouched. A short path such as `/tmp/fp-test` is needed, because socket paths are limited to 104 bytes.

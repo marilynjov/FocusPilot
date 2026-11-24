@@ -230,6 +230,12 @@ final class AppModel {
         do {
             try server.start()
             commandServer = server
+            // Synchronously, before the app exits: removes the socket file
+            // only while it is still this copy's (#42).
+            NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                                   object: nil, queue: nil) { _ in server.stop() }
+        } catch CommandSocketServer.Failure.alreadyRunning {
+            commandLineError = "Another copy of FocusPilot is running, so this one gets no agent reports or focuspilot commands. Quit the other copy, then reopen this one."
         } catch {
             // The CLI then queues to the inbox, which is still imported.
             commandLineError = "The focuspilot command can’t reach FocusPilot: \(error)"

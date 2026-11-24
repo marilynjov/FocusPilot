@@ -12,6 +12,8 @@ public final class CommandSocketServer: @unchecked Sendable {
     public enum Failure: Error, Equatable {
         case pathTooLong
         case couldNotListen(errno: Int32)
+        /// Another FocusPilot copy answers on the path; it keeps it.
+        case alreadyRunning
     }
 
     private let path: String
@@ -19,6 +21,8 @@ public final class CommandSocketServer: @unchecked Sendable {
     private let handler: @Sendable (CommandRequest, CommandPeer) async -> CommandResponse
     private let lock = NSLock()
     private var source: (any DispatchSourceRead)?
+    /// The socket file this server bound, so `stop` removes only its own.
+    private var boundFile: (device: dev_t, inode: ino_t)?
     private var openConnections = 0
 
     /// `maxConnections` bounds the connections handled at once; more are
@@ -43,9 +47,13 @@ public final class CommandSocketServer: @unchecked Sendable {
                                                 attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
         // A socket file left by a crashed run refuses connections; replace it.
+        // One another FocusPilot copy answers on is that copy's (#42).
         // Anything that is not a socket is left alone and bind fails.
         var info = stat()
-        if lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFSOCK { unlink(path) }
+        if lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFSOCK {
+            guard !CommandSocketClient(path: path).isListening() else { throw Failure.alreadyRunning }
+            unlink(path)
+        }
 
         let listener = socket(AF_UNIX, SOCK_STREAM, 0)
         guard listener >= 0 else { throw Failure.couldNotListen(errno: errno) }
@@ -58,23 +66,33 @@ public final class CommandSocketServer: @unchecked Sendable {
             throw Failure.couldNotListen(errno: error)
         }
         _ = fcntl(listener, F_SETFL, fcntl(listener, F_GETFL) | O_NONBLOCK)
+        var bound = stat()
+        let file = lstat(path, &bound) == 0 ? (device: bound.st_dev, inode: bound.st_ino) : nil
 
         let source = DispatchSource.makeReadSource(fileDescriptor: listener, queue: .global())
         source.setEventHandler { [weak self] in self?.acceptPending(on: listener) }
         source.setCancelHandler { close(listener) }
-        lock.withLock { self.source = source }
+        lock.withLock {
+            self.source = source
+            boundFile = file
+        }
         source.resume()
     }
 
-    /// Stops listening and removes the socket file. The listener closes
-    /// shortly after, without blocking the caller.
+    /// Stops listening and removes the socket file if it is still the one
+    /// this server bound, not another copy's. The listener closes shortly
+    /// after, without blocking the caller.
     public func stop() {
-        let source = lock.withLock {
-            defer { self.source = nil }
-            return self.source
+        let (source, file) = lock.withLock {
+            defer {
+                self.source = nil
+                boundFile = nil
+            }
+            return (self.source, boundFile)
         }
         source?.cancel()
-        unlink(path)
+        var info = stat()
+        if let file, lstat(path, &info) == 0, info.st_dev == file.device, info.st_ino == file.inode { unlink(path) }
     }
 
     private func acceptPending(on listener: Int32) {
