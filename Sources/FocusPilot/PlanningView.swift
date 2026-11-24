@@ -35,7 +35,7 @@ struct PlanningView: View {
                 // left the row unselectable once the page had been left
                 // (owner report, 2026-11-10).
                 Label("Review queue", systemImage: "tray.full")
-                    .badge(model.reviewItems.count)
+                    .badge(ReviewItem.unreadCount(model.reviewItems))
                     .tag(Page.review)
                 Label("Settings", systemImage: "gearshape").tag(Page.settings)
             }
