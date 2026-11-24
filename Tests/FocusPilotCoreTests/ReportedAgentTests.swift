@@ -303,8 +303,8 @@ struct ReportedAgentTests {
 
         let queue = ReviewItem.markingSuperseded([newest, older, opened, approval])
 
-        // Superseded and opened results don't count; an unopened approval request does.
-        #expect(ReviewItem.unreadCount(queue) == 2)
+        // Superseded and opened results don't count, nor approval requests, as in the raccoon's note.
+        #expect(ReviewItem.unreadCount(queue) == 1)
         #expect(ReviewItem.unreadCount([]) == 0)
     }
 

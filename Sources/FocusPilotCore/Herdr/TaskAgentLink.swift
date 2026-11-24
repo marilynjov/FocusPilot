@@ -121,11 +121,11 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
         }
     }
 
-    /// The Review queue's sidebar number: unread items only, approval
-    /// requests the owner hasn't opened included (owner request,
-    /// 2026-11-23). `items` are already `markingSuperseded`.
+    /// The Review queue's sidebar number: unread results only, as the
+    /// raccoon's note counts them, so approval requests are left out
+    /// (owner request, 2026-11-23). `items` are already `markingSuperseded`.
     public static func unreadCount(_ items: [ReviewItem]) -> Int {
-        items.count { $0.isUnread }
+        items.count { $0.isUnread && $0.kind != .approval }
     }
 
     /// The agent it came from: the reported agent or Herdr link, else its
