@@ -292,6 +292,22 @@ struct ReportedAgentTests {
         #expect(queue[1].stateTitle == "Read")
     }
 
+    @Test func theSidebarCountsUnreadItemsOnly() {
+        let newest = item(at: wednesdayMorningInBogota)
+        let older = item(at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        var opened = item(at: wednesdayMorningInBogota.addingTimeInterval(-120))
+        opened.reportedAgentID = 2
+        opened.openedAt = wednesdayMorningInBogota
+        var approval = item(at: wednesdayMorningInBogota.addingTimeInterval(-180))
+        approval.kind = .approval
+
+        let queue = ReviewItem.markingSuperseded([newest, older, opened, approval])
+
+        // Superseded and opened results don't count; an unopened approval request does.
+        #expect(ReviewItem.unreadCount(queue) == 2)
+        #expect(ReviewItem.unreadCount([]) == 0)
+    }
+
     @Test func theNoteCountsShownUnreadResultsOnly() {
         var newest = item(at: wednesdayMorningInBogota.addingTimeInterval(-60), reported: false)
         newest.agentLabel = "Claude Code · Bowling"
