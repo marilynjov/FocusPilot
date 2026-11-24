@@ -78,7 +78,7 @@ struct PlanningView: View {
             Button("Just Show Warp") { model.showWarp(for: agent) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("To bring this chat to the front, FocusPilot needs it in its own window. It opens a new window that continues the chat where you left off. Then close the old tab.")
+            Text("To bring this chat to the front, FocusPilot needs it in its own window. Open in Its Own Window starts one that continues the chat where you left off; then close the old tab so you don’t type in both. Just Show Warp may show a different window.")
         }
         .environment(model)
         .task { await model.refresh() }
