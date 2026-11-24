@@ -97,6 +97,12 @@ private struct AgentMonitoringSection: View {
             if let error = model.agentMonitoringError {
                 Text(error).font(.callout).foregroundStyle(.secondary)
             }
+            if let error = model.commandLineError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         Section("Claude Code hooks") {
             Text("To hear from Claude Code, add this to the \"hooks\" in ~/.claude/settings.json (merge it with any hooks you already have), then start a new Claude Code session. It reports a new session, a prompt, a request for your permission or input, and a finished turn. No usage or token figures are read.")

@@ -89,6 +89,34 @@ final class CommandSocketTests {
         #expect(try CommandSocketClient(path: path).send(.tasks(nil)) == .tasks(scope))
     }
 
+    // A second FocusPilot copy used to take the path and leave it dead on
+    // quit, so the running app got no reports (#42).
+    @Test func aSecondCopyLeavesTheRunningOneInPlace() throws {
+        let running = server()
+        try running.start()
+        defer { running.stop() }
+        let second = server(answer: .refused("second copy"))
+
+        #expect(throws: CommandSocketServer.Failure.alreadyRunning) { try second.start() }
+        second.stop()
+
+        #expect(try CommandSocketClient(path: path).send(.tasks(nil)) == .tasks(scope))
+    }
+
+    @Test func stoppingLeavesASocketThatIsNotItsOwn() throws {
+        let first = server(answer: .refused("first"))
+        try first.start()
+        // Its file gone (removed by hand, say) and another copy listening there.
+        unlink(path)
+        let second = server()
+        try second.start()
+        defer { second.stop() }
+
+        first.stop()
+
+        #expect(try CommandSocketClient(path: path).send(.tasks(nil)) == .tasks(scope))
+    }
+
     @Test func connectionsBeyondTheCapAreTurnedAway() async throws {
         let gate = Gate()
         let server = CommandSocketServer(path: path, maxConnections: 2) { _ in
