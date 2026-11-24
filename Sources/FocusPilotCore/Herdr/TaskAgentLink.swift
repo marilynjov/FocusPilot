@@ -121,6 +121,13 @@ public struct ReviewItem: Equatable, Sendable, Identifiable {
         }
     }
 
+    /// The Review queue's sidebar number: unread results only, as the
+    /// raccoon's note counts them, so approval requests are left out
+    /// (owner request, 2026-11-23). `items` are already `markingSuperseded`.
+    public static func unreadCount(_ items: [ReviewItem]) -> Int {
+        items.count { $0.isUnread && $0.kind != .approval }
+    }
+
     /// The agent it came from: the reported agent or Herdr link, else its
     /// label once the agent was forgotten or unlinked. That fallback is
     /// approximate: two unlinked agents with one label count as one, and a
