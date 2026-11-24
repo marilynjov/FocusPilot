@@ -121,12 +121,19 @@ enum HerdrAgentStore {
                               output: text.map { AgentOutputPreview(storedText: $0, totalLineCount: row["outputLineCount"]) },
                               reportedAgentID: row["reportedAgentId"],
                               source: (row["source"] as String?).flatMap(AgentSource.init(rawValue:)),
-                              agentState: (row["agentState"] as String?).flatMap(ReportedAgentState.init(rawValue:)))
+                              agentState: (row["agentState"] as String?).flatMap(ReportedAgentState.init(rawValue:)),
+                              openedAt: row["openedAt"])
         }
     }
 
     static func markReviewed(_ id: Int64, at now: Date, in db: Database) throws {
         try db.execute(sql: "UPDATE herdrReviewItem SET reviewedAt = ? WHERE id = ?", arguments: [now, id])
+    }
+
+    /// Keeps the first time it was opened; opening it again changes nothing.
+    static func markOpened(_ id: Int64, at now: Date, in db: Database) throws {
+        try db.execute(sql: "UPDATE herdrReviewItem SET openedAt = ? WHERE id = ? AND openedAt IS NULL",
+                       arguments: [now, id])
     }
 }
 
@@ -185,6 +192,7 @@ struct ReviewItemRow: Codable, FetchableRecord, MutablePersistableRecord {
     var reportedAgentId: Int64? = nil
     var source: String? = nil
     var agentState: String? = nil
+    var openedAt: Date? = nil
 
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID

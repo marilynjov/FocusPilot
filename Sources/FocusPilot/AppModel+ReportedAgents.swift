@@ -15,16 +15,32 @@ extension AppModel {
     }
 
     /// The Review queue as shown: a reported agent's result waits while a
-    /// plan block runs, until its next break (D8).
+    /// plan block runs, until its next break (D8). Only each agent's newest
+    /// shown result is unread.
     var reviewItems: [ReviewItem] {
-        allReviewItems.filter {
+        ReviewItem.markingSuperseded(allReviewItems.filter {
             !ReviewHold.isHeld($0, session: snapshot.activeSession, planSession: snapshot.activePlanRun != nil,
                                releasedAt: reviewReleasedAt)
-        }
+        })
     }
 
     /// Results waiting for the next break.
     var heldReviewCount: Int { allReviewItems.count - reviewItems.count }
+
+    /// The raccoon's note for shown results the owner hasn't opened yet,
+    /// naming the newest one's agent; held results and approval requests
+    /// don't count.
+    var raccoonUnreadNote: String? {
+        RaccoonPresence.unreadNote(for: allReviewItems, session: snapshot.activeSession,
+                                   planSession: snapshot.activePlanRun != nil, releasedAt: reviewReleasedAt)
+    }
+
+    /// Clicking the raccoon's unread note: the Review queue, in the
+    /// planning window brought forward.
+    func openReviewQueue() {
+        requestedPage = .review
+        planningWindowRequests += 1
+    }
 
     /// A break in the session ended: what was shown during it stays shown.
     func noteReviewRelease(from old: FocusSession?, to new: FocusSession?) {

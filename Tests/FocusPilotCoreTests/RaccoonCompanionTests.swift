@@ -167,6 +167,49 @@ struct RaccoonCompanionTests {
         #expect(RaccoonPresence.windowSpot(isInFront: false, isToday: true, isTodayEmpty: false) == nil)
     }
 
+    @Test func theUnreadNoteCountsAndNamesTheNewest() {
+        #expect(RaccoonPresence.unreadNote(count: 0, newestLabel: "Claude Code · Bowling") == nil)
+        #expect(RaccoonPresence.unreadNote(count: 1, newestLabel: "Claude Code · Bowling") == "1 unread · Claude Code · Bowling")
+        #expect(RaccoonPresence.unreadNote(count: 2, newestLabel: "Claude Code · Bowling") == "2 unread · Claude Code · Bowling")
+        #expect(RaccoonPresence.unreadNote(count: 3, newestLabel: nil) == "3 unread")
+        #expect(RaccoonPresence.unreadNote(count: 3, newestLabel: "  ") == "3 unread")
+    }
+
+    @Test func theUnreadNoteShowsOnScreenOnlyWhileTheRaccoonIsOutForTheTask() {
+        let note = "2 unread · Claude Code"
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: nil, note: note)
+            == RaccoonPresence(poseID: "laptop", note: note))
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .onBreak, isWindowOpen: false, peek: nil, note: note)?.note
+            == note)
+        // No task under way, or another mode: nothing extra.
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: nil, isWindowOpen: false, peek: nil, note: note) == nil)
+        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: .working, isWindowOpen: false, peek: nil,
+                                        note: note) == nil)
+        #expect(RaccoonPresence.resolve(mode: .off, activity: .working, isWindowOpen: false, peek: nil, note: note) == nil)
+        // A peek replaces the note while it lasts.
+        let peek = RaccoonPeek(poseID: "peek", message: "10 minutes left")
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: false, peek: peek, note: note)
+            == RaccoonPresence(poseID: "peek", message: "10 minutes left"))
+        #expect(RaccoonPresence.resolve(mode: .peeksForReminders, activity: .working, isWindowOpen: false, peek: peek,
+                                        note: note)?.note == nil)
+        // With the window in front the window shows it instead.
+        #expect(RaccoonPresence.resolve(mode: .staysOnScreen, activity: .working, isWindowOpen: true, peek: nil, note: note) == nil)
+    }
+
+    @Test func theWindowShowsTheUnreadNoteAsOnScreen() {
+        let note = "1 unread · ablation"
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, note: note)
+            == RaccoonPresence(poseID: "laptop", note: note))
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: nil, note: note) == nil)
+        #expect(RaccoonPresence.inWindow(mode: .peeksForReminders, activity: .working, note: note) == nil)
+        #expect(RaccoonPresence.inWindow(mode: .off, activity: .working, note: note) == nil)
+        let peek = RaccoonPeek(poseID: "sign", message: "ablation needs you")
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, peek: peek, note: note)
+            == RaccoonPresence(poseID: "sign", message: "ablation needs you"))
+        // No note: the task's pose alone, as before.
+        #expect(RaccoonPresence.inWindow(mode: .staysOnScreen, activity: .working, note: nil) == RaccoonPresence(poseID: "laptop"))
+    }
+
     @Test func offShowsNothing() {
         #expect(RaccoonPresence.resolve(mode: .off, activity: .working, isWindowOpen: false, peek: RaccoonPeek(poseID: "peek")) == nil)
     }

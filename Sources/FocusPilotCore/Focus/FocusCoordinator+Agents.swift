@@ -73,6 +73,10 @@ extension FocusCoordinator {
         try await repository.markReviewed(itemID)
     }
 
+    public func markOpened(_ itemID: Int64) async throws {
+        try await repository.markOpened(itemID)
+    }
+
     /// Focuses the linked agent's pane in Herdr, for the owner's click only.
     ///
     /// The target is revalidated right before: same server instance, same

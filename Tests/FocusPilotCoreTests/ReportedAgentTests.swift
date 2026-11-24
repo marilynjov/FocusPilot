@@ -252,4 +252,69 @@ struct ReportedAgentTests {
         }
         #expect(ReviewHold.isHeld(afterBreak, session: session(.running), planSession: true, releasedAt: breakEnd))
     }
+
+    // MARK: Unread
+
+    @Test func aResultIsUnreadThenReadAndOthersAddUnread() {
+        var result = item(at: wednesdayMorningInBogota)
+        #expect(result.stateTitle == "Unread")
+        result.openedAt = wednesdayMorningInBogota
+        #expect(result.stateTitle == "Read")
+
+        var approval = item(at: wednesdayMorningInBogota, reported: false)
+        approval.kind = .approval
+        #expect(approval.stateTitle == "Needs your approval · Unread")
+        approval.openedAt = wednesdayMorningInBogota
+        #expect(approval.stateTitle == "Needs your approval")
+
+        var failed = item(at: wednesdayMorningInBogota)
+        failed.agentState = .failed
+        #expect(failed.stateTitle == "Failed · Unread")
+        failed.openedAt = wednesdayMorningInBogota
+        #expect(failed.stateTitle == "Failed")
+    }
+
+    @Test func onlyEachAgentsNewestResultIsUnread() {
+        let newest = item(at: wednesdayMorningInBogota)
+        let older = item(at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        var other = item(at: wednesdayMorningInBogota.addingTimeInterval(-120))
+        other.reportedAgentID = 2
+        var herdr = item(at: wednesdayMorningInBogota.addingTimeInterval(-150), reported: false)
+        herdr.linkID = 7
+        var olderHerdr = item(at: wednesdayMorningInBogota.addingTimeInterval(-160), reported: false)
+        olderHerdr.linkID = 7
+        var approval = item(at: wednesdayMorningInBogota.addingTimeInterval(-180))
+        approval.kind = .approval
+
+        let queue = ReviewItem.markingSuperseded([newest, older, other, herdr, olderHerdr, approval])
+
+        #expect(queue.map(\.isUnread) == [true, false, true, true, false, true])
+        #expect(queue[1].stateTitle == "Read")
+    }
+
+    @Test func theNoteCountsShownUnreadResultsOnly() {
+        var newest = item(at: wednesdayMorningInBogota.addingTimeInterval(-60), reported: false)
+        newest.agentLabel = "Claude Code · Bowling"
+        let older = item(at: wednesdayMorningInBogota.addingTimeInterval(-120), reported: false)
+        var opened = item(at: wednesdayMorningInBogota.addingTimeInterval(-180), reported: false)
+        opened.openedAt = wednesdayMorningInBogota
+        var approval = item(at: wednesdayMorningInBogota.addingTimeInterval(-30), reported: false)
+        approval.kind = .approval
+        let held = item(at: wednesdayMorningInBogota.addingTimeInterval(600))
+        // Newest first, as the queue is.
+        let queue = [held, approval, newest, older, opened]
+
+        // In a plan block the reported result waits for the break and isn't counted.
+        #expect(RaccoonPresence.unreadNote(for: queue, session: session(.running), planSession: true)
+            == "2 unread · Claude Code · Bowling")
+        // On the break it shows, and counts, as the newest.
+        #expect(RaccoonPresence.unreadNote(for: queue, session: session(.onBreak(until: .now)), planSession: true)
+            == "3 unread · bot")
+        #expect(RaccoonPresence.unreadNote(for: [approval, opened], session: session(.running), planSession: true) == nil)
+        #expect(RaccoonPresence.unreadNote(for: [held], session: session(.running), planSession: true) == nil)
+        // A newer result held for the break doesn't make the shown one read.
+        let shownBefore = item(at: wednesdayMorningInBogota.addingTimeInterval(-60))
+        #expect(RaccoonPresence.unreadNote(for: [held, shownBefore], session: session(.running), planSession: true)
+            == "1 unread · bot")
+    }
 }

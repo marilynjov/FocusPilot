@@ -50,7 +50,7 @@ struct PlanningView: View {
                 // On Today the raccoon is inside the Now card instead; an
                 // empty Today has none, so it stays in the corner there.
                 .overlay(alignment: .bottomTrailing) {
-                    if raccoonSpot == .corner { RaccoonWindowView(model: model) }
+                    if raccoonSpot == .corner { RaccoonWindowView(model: model, showsNote: page != .review) }
                 }
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
